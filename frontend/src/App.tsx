@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 // Initialize Instant DB for React
-const APP_ID = (import.meta as any).env?.VITE_INSTANT_APP_ID || 'da1a9780-60b6-4df1-8e99-4c2f602b9e67';
+const APP_ID = (import.meta as any).env?.VITE_INSTANT_APP_ID || '1e866823-f514-46e8-a996-4655f68ca524';
 export const db = init({ appId: APP_ID });
 
 
