@@ -4,12 +4,13 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Globe, RefreshCw, ExternalLink, Smartphone, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Globe, RefreshCw, ExternalLink, Smartphone, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Target } from 'lucide-react';
 
 interface CpaOffer {
   id: string;
   title: string;
   description: string;
+  conversion: string;
   payoutUsd: number;
   payoutInr: number;
   rewardPoints: number;
@@ -35,6 +36,7 @@ export default function Offerwall({ userId }: OfferwallProps) {
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // When iframe widget is configured, skip the API fetch entirely.
   const useWidget = !!WIDGET_URL;
@@ -181,60 +183,115 @@ export default function Offerwall({ userId }: OfferwallProps) {
           {/* Offer cards */}
           {offers.length > 0 && (
             <ul className="space-y-3" data-testid="offerwall-list">
-              {offers.map(o => (
-                <li
-                  key={o.id}
-                  data-testid={`offerwall-item-${o.id}`}
-                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 bg-[#1a1a24] border border-white/7 rounded-2xl gap-4 transition-all hover:border-[#7c6cff]/30"
-                >
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-[#16161f] flex items-center justify-center text-2xl shrink-0 border border-white/5">
-                      {o.icon}
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-[#f0f0f8] font-display truncate">{o.title}</h4>
-                      {o.description && (
-                        <p className="text-xs text-[#9191a8] leading-relaxed line-clamp-2">{o.description}</p>
-                      )}
-                      <div className="flex items-center gap-2 pt-1 flex-wrap">
-                        {o.devices.length > 0 && (
-                          <span className="bg-[#5aedcc]/12 text-[#5aedcc] border border-[#5aedcc]/20 rounded-full px-2 py-0.5 text-[10px] font-medium inline-flex items-center gap-1">
-                            <Smartphone className="w-3 h-3" />
-                            {o.devices.slice(0, 2).join(' · ')}
+              {offers.map(o => {
+                const isOpen = expandedId === o.id;
+                const hasDetails = !!(o.conversion || (o.description && o.description.length > 80));
+                return (
+                  <li
+                    key={o.id}
+                    data-testid={`offerwall-item-${o.id}`}
+                    className="bg-[#1a1a24] border border-white/7 rounded-2xl transition-all hover:border-[#7c6cff]/30 overflow-hidden"
+                  >
+                    {/* Top row */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 gap-4">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="w-12 h-12 rounded-xl bg-[#16161f] flex items-center justify-center text-2xl shrink-0 border border-white/5">
+                          {o.icon}
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <h4 className="text-sm font-semibold text-[#f0f0f8] font-display truncate">{o.title}</h4>
+                          {o.description && (
+                            <p className={`text-xs text-[#9191a8] leading-relaxed ${isOpen ? '' : 'line-clamp-2'}`}>
+                              {o.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 pt-1 flex-wrap">
+                            {o.devices.length > 0 && (
+                              <span className="bg-[#5aedcc]/12 text-[#5aedcc] border border-[#5aedcc]/20 rounded-full px-2 py-0.5 text-[10px] font-medium inline-flex items-center gap-1">
+                                <Smartphone className="w-3 h-3" />
+                                {o.devices.slice(0, 2).join(' · ')}
+                              </span>
+                            )}
+                            {o.countries.length > 0 && (
+                              <span className="bg-white/[0.04] text-[#9191a8] border border-white/5 rounded-full px-2 py-0.5 text-[10px]">
+                                {o.countries.slice(0, 3).join(' · ')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-4 shrink-0 border-t border-white/5 sm:border-0 pt-3 sm:pt-0">
+                        <div className="text-left sm:text-right">
+                          <span className="text-[#a594ff] font-bold text-lg block font-display">
+                            +{o.rewardPoints}
                           </span>
-                        )}
-                        {o.category && (
-                          <span className="bg-white/[0.04] text-[#9191a8] border border-white/5 rounded-full px-2 py-0.5 text-[10px]">
-                            {o.category}
+                          <span className="text-[10px] text-[#5a5a72] block">
+                            coins (₹{o.payoutInr.toFixed(2)})
                           </span>
-                        )}
+                        </div>
+
+                        <button
+                          data-testid={`btn-offer-${o.id}`}
+                          onClick={() => handleStartOffer(o)}
+                          disabled={openingId === o.id || !userId}
+                          className="bg-[#7c6cff] hover:bg-[#6a5aef] disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shrink-0 transition-all font-display inline-flex items-center gap-1.5"
+                        >
+                          {openingId === o.id ? 'Opening…' : (<>
+                            Start <ExternalLink className="w-3 h-3" />
+                          </>)}
+                        </button>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-4 shrink-0 border-t border-white/5 sm:border-0 pt-3 sm:pt-0">
-                    <div className="text-left sm:text-right">
-                      <span className="text-[#a594ff] font-bold text-lg block font-display">
-                        +{o.rewardPoints}
-                      </span>
-                      <span className="text-[10px] text-[#5a5a72] block">
-                        pts (₹{o.payoutInr.toFixed(2)})
-                      </span>
-                    </div>
+                    {/* Requirements toggle */}
+                    {hasDetails && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isOpen ? null : o.id)}
+                        data-testid={`offer-details-toggle-${o.id}`}
+                        className="w-full px-5 py-2.5 border-t border-white/5 bg-[#0f0f17] hover:bg-[#13131c] flex items-center justify-between text-[11px] text-[#a594ff] font-semibold transition-colors"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Target className="w-3.5 h-3.5" />
+                          {isOpen ? 'Hide requirements' : 'View requirements & how to complete'}
+                        </span>
+                        {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
 
-                    <button
-                      data-testid={`btn-offer-${o.id}`}
-                      onClick={() => handleStartOffer(o)}
-                      disabled={openingId === o.id || !userId}
-                      className="bg-[#7c6cff] hover:bg-[#6a5aef] disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shrink-0 transition-all font-display inline-flex items-center gap-1.5"
-                    >
-                      {openingId === o.id ? 'Opening…' : (<>
-                        Start <ExternalLink className="w-3 h-3" />
-                      </>)}
-                    </button>
-                  </div>
-                </li>
-              ))}
+                    {/* Expanded requirements */}
+                    {isOpen && hasDetails && (
+                      <div className="px-5 py-4 bg-[#0c0c14] border-t border-white/5 space-y-3">
+                        {o.conversion && (
+                          <div className="space-y-1">
+                            <div className="text-[10px] uppercase tracking-wider font-bold text-[#3ecf8e]">
+                              ✅ What you need to do
+                            </div>
+                            <p className="text-xs text-[#f0f0f8] leading-relaxed bg-[#3ecf8e]/8 border border-[#3ecf8e]/20 rounded-lg px-3 py-2.5">
+                              {o.conversion}
+                            </p>
+                          </div>
+                        )}
+                        {o.description && o.description.length > 80 && (
+                          <div className="space-y-1">
+                            <div className="text-[10px] uppercase tracking-wider font-bold text-[#a594ff]">
+                              📖 Full details
+                            </div>
+                            <p className="text-xs text-[#dcdce6] leading-relaxed whitespace-pre-wrap">
+                              {o.description}
+                            </p>
+                          </div>
+                        )}
+                        <div className="flex items-start gap-2 text-[11px] text-[#ffa94d] bg-[#ffa94d]/8 border border-[#ffa94d]/20 rounded-lg px-3 py-2">
+                          <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <span>Complete the task fully on the partner site. Rewards credit automatically once the conversion is verified (usually within minutes).</span>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>

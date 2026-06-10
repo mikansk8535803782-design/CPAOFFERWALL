@@ -9,6 +9,8 @@ interface NormalizedOffer {
   id: string;
   title: string;
   description: string;
+  /** The specific conversion action required (e.g. "Sign up and verify email"). */
+  conversion: string;
   payoutUsd: number;
   payoutInr: number;
   rewardPoints: number;
@@ -66,7 +68,8 @@ function normalize(raw: any): NormalizedOffer | null {
   return {
     id: String(raw.id ?? ''),
     title: String(raw.title ?? 'CPA Offer').slice(0, 120),
-    description: String(raw.description ?? raw.long_description ?? '').slice(0, 240),
+    description: String(raw.long_description ?? raw.description ?? '').slice(0, 800),
+    conversion: String(raw.conversion ?? '').slice(0, 300),
     payoutUsd: +usd.toFixed(2),
     payoutInr,
     rewardPoints,

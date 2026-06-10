@@ -1092,14 +1092,34 @@ export default function AdminPanel({
                             <div className="flex flex-col gap-1.5 items-end justify-center w-full">
                               <button
                                 id={`pay-withdraw-btn-${p.id}`}
-                                onClick={() => onApprovePayout(p.id)}
+                                onClick={() => {
+                                  if (window.confirm(
+                                    `✅ MARK AS PAID — confirm?\n\n` +
+                                    `User: ${p.userName}\n` +
+                                    `Method: ${p.method}\n` +
+                                    `Destination: ${p.dest}\n` +
+                                    `Amount: ₹${p.amount.toFixed(2)}\n\n` +
+                                    `⚠️ Click OK only AFTER you have actually sent the payment from your phone. This locks the request — no refund possible.`
+                                  )) {
+                                    onApprovePayout(p.id);
+                                  }
+                                }}
                                 className="bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 border border-[#3ecf8e]/30 text-[#3ecf8e] px-3 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all font-display w-full max-w-[130px] whitespace-nowrap text-center"
                               >
                                 Mark as Paid
                               </button>
                               <button
                                 id={`reject-withdraw-btn-${p.id}`}
-                                onClick={() => onRejectPayout(p.id)}
+                                onClick={() => {
+                                  if (window.confirm(
+                                    `❌ REJECT & REFUND — confirm?\n\n` +
+                                    `User: ${p.userName}\n` +
+                                    `Amount: ₹${p.amount.toFixed(2)} will be refunded to their balance.\n\n` +
+                                    `⚠️ Click OK only if you have NOT sent the payment. Refunding after payment will cause a double-credit loss.`
+                                  )) {
+                                    onRejectPayout(p.id);
+                                  }
+                                }}
                                 className="bg-[#16161f] border border-red-500/30 hover:bg-red-500/10 text-[#ff4f4f] px-3 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all font-display w-full max-w-[130px] whitespace-nowrap text-center"
                               >
                                 Reject & Refund
