@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "EarnHub — Vercel deployment wrapper. Real app lives in /frontend.",
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "scripts": {
     "build": "cd frontend && yarn install --frozen-lockfile && yarn build",
@@ -15,6 +15,6 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@instantdb/admin": "^1.0.43",
-    "@vercel/node": "^3.2.24"
+    "@vercel/node": "^5.8.14"
   }
 }

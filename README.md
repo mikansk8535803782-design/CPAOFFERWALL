@@ -27,6 +27,7 @@ just import the repo and deploy.
    | `CPALEAD_PUBLISHER_ID` | Same as above | Server | ✅ for CPA |
    | `CPALEAD_POSTBACK_PASSWORD` | A 24+ char secret (`openssl rand -hex 24`) | Server | ✅ for CPA |
    | `CPALEAD_API_KEY` | If your CPALead account requires one | Server | Optional |
+   | `VITE_CPALEAD_WIDGET_URL` | Your CPALead iframe widget URL (with `{subid}` placeholder). When set, the Offerwall renders this widget directly instead of using the JSON API. | Client | Optional |
    | `GEMINI_API_KEY` | Your Gemini API key | Server | Optional |
 
 4. **Click Deploy**.

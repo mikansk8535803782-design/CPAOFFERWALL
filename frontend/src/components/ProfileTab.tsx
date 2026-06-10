@@ -21,17 +21,6 @@ export default function ProfileTab({ user, onUpdateProfile, toast }: ProfileTabP
   const [trc20, setTrc20] = useState(user.trc20 || '');
   const [bep20, setBep20] = useState(user.bep20 || '');
 
-  // Generate an authentic mock device fingerprint
-  const mockFingerprint = [
-    { key: 'Browser Client', val: (user.userAgent || navigator.userAgent).slice(0, 50) + '...' },
-    { key: 'IP Address Cluster', val: user.lastIp || 'Fetching via Network...' },
-    { key: 'Hardware Device Hash', val: 'df_hash_' + btoa(user.email).slice(0, 10).toLowerCase() },
-    { key: 'Canvas Fingerprint Scale', val: window.screen.width + ' × ' + window.screen.height + ' | 24-bit Color' },
-    { key: 'Local Timezone', val: Intl.DateTimeFormat().resolvedOptions().timeZone + ' (Asia/Kolkata)' },
-    { key: 'System Language ID', val: navigator.language || 'en-US' },
-    { key: 'Hardware Threads', val: String(navigator.hardwareConcurrency || 8) + ' Cores' },
-    { key: 'Anti-Cloning Integrity Check', val: user.isIPLocked ? '❌ WARNING: IP Flagged/Collision Detected' : '✓ Fully Secure (No overlaps identified)' }
-  ];
 
   // Tier calculation based on total earnings
   const tierSystem = () => {
@@ -107,7 +96,7 @@ export default function ProfileTab({ user, onUpdateProfile, toast }: ProfileTabP
 
           <div className="w-full text-left space-y-2 pt-2 border-t border-white/5">
             <div className="flex justify-between text-[11px] font-display">
-               <span className="text-[#9191a8]">User Tier Badge Level Indicator Progress</span>
+               <span className="text-[#9191a8]">Tier Progress</span>
                <span className={currentTier.color}>{currentTier.next}</span>
             </div>
             <div className="w-full bg-[#16161f] h-2 rounded-full overflow-hidden">
@@ -117,7 +106,7 @@ export default function ProfileTab({ user, onUpdateProfile, toast }: ProfileTabP
           
           <div className="w-full pt-4 border-t border-white/5 space-y-3">
              <div className="flex justify-between items-center text-xs">
-                <span className="text-[#f0f0f8] font-bold">Dynamic Streak Tracker</span>
+                <span className="text-[#f0f0f8] font-bold">Daily Streak</span>
                 <span className="text-[#a594ff] font-mono">🔥 {currentStreak} Days</span>
              </div>
              
@@ -134,7 +123,7 @@ export default function ProfileTab({ user, onUpdateProfile, toast }: ProfileTabP
                disabled={!canCheckIn}
                className={`w-full py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed ${canCheckIn ? 'bg-gradient-to-r from-[#ff7b72] to-[#ffa94d] text-[#0a0a0f] hover:brightness-110 shadow-[0_0_15px_rgba(255,123,114,0.3)]' : 'bg-[#16161f] text-[#5a5a72]'}`}
              >
-               {canCheckIn ? 'Daily Check-in Reward Node' : '✓ Check-in Claimed Today'}
+               {canCheckIn ? 'Claim Daily Reward' : '✓ Already Claimed Today'}
              </button>
           </div>
         </div>
@@ -247,7 +236,7 @@ export default function ProfileTab({ user, onUpdateProfile, toast }: ProfileTabP
       <div className="bg-[#1a1a24] border border-[#ffb84d]/20 rounded-2xl p-6 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-40 h-40 bg-[#ffb84d]/10 blur-3xl rounded-full pointer-events-none" />
         <h3 className="font-display font-bold text-sm text-[#f0f0f8] relative z-10 flex items-center gap-2 mb-4">
-           🌍 Global Earnings Leaderboard Grid
+           🌍 Top Earners Leaderboard
         </h3>
         
         <div className="overflow-x-auto rounded-xl border border-white/5 relative z-10 shadow-inner">
@@ -314,72 +303,10 @@ export default function ProfileTab({ user, onUpdateProfile, toast }: ProfileTabP
         </div>
       </div>
 
-      {/* Security Console */}
-      <div className="bg-[#1a1a24] border border-white/7 rounded-2xl p-5 space-y-4">
-        <h3 className="font-display font-bold text-sm text-[#f0f0f8] flex justify-between items-center">
-          <span>🔒 Security & Hardware Fingerprint</span>
-          <span className="bg-[#7c6cff]/20 text-[#a594ff] px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">Protect</span>
-        </h3>
-        <div className="border border-white/5 rounded-xl divide-y divide-white/5 overflow-hidden">
-          {mockFingerprint.map((fp, i) => (
-            <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between py-2.5 px-4 text-xs font-mono gap-1.5 bg-[#111118]">
-              <span className="text-[#9191a8] text-left">{fp.key}</span>
-              <span className="text-[#5aedcc] text-left sm:text-right font-semibold break-all">{fp.val}</span>
-            </div>
-          ))}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2.5 px-4 text-xs font-mono gap-1.5 bg-[#111118]">
-            <span className="text-[#9191a8] text-left">IP Change Network Lock Indicator</span>
-            <span className={`text-left sm:text-right font-semibold break-all ${user.isIPLocked ? 'text-[#ff4f4f]' : 'text-[#3ecf8e]'}`}>
-              {user.isIPLocked ? 'Suspended (IP Collision)' : `Active (Locked to ${user.lastIp || 'unknown'})`}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-          <div className="bg-[#111118] border border-white/10 rounded-xl p-4 flex justify-between items-center shadow-sm">
-            <div>
-              <h4 className="text-xs font-bold text-white mb-1">Two-Factor Authentication (2FA) Security Switch</h4>
-              <p className="text-[10px] text-[#5a5a72]">Require authenticator app on login</p>
-            </div>
-            <div className="relative w-10 h-6 bg-[#1a1a24] rounded-full border border-white/10 cursor-pointer">
-              <div className="absolute left-1 top-1 w-4 h-4 bg-[#7c6cff] rounded-full shadow transition-all transform translate-x-4"></div>
-            </div>
-          </div>
-          <div className="bg-[#111118] border border-white/10 rounded-xl p-4 flex justify-between items-center shadow-sm">
-            <div>
-              <h4 className="text-xs font-bold text-[#ff4f4f] mb-1">Instant Account Deactivation Trigger</h4>
-              <p className="text-[10px] text-[#5a5a72]">Permanently delete data & earnings</p>
-            </div>
-            <button className="bg-red-500/10 text-[#ff4f4f] border border-red-500/20 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-red-500/20">Deactivate</button>
-          </div>
-        </div>
-
-        <div className="mt-4 border border-white/5 bg-[#111118] rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-white/5 bg-[#16161f]">
-            <h4 className="text-xs font-bold text-[#f0f0f8]">Active Session Device Management Logs</h4>
-          </div>
-          <div className="divide-y divide-white/5 text-xs text-[#9191a8]">
-            <div className="p-4 flex justify-between items-center hover:bg-white/[0.02]">
-              <div>
-                <div className="text-[#f0f0f8] font-bold text-[11px] mb-0.5">Windows 11 • Chrome <span className="ml-2 text-[9px] text-[#3ecf8e] uppercase border border-[#3ecf8e]/20 px-1 rounded">Current</span></div>
-                <div className="text-[10px] font-mono mt-1">103.22.45.61 • Active now</div>
-              </div>
-            </div>
-            <div className="p-4 flex justify-between items-center hover:bg-white/[0.02]">
-              <div>
-                <div className="text-[#f0f0f8] font-bold text-[11px] mb-0.5">Android 14 • App Client</div>
-                <div className="text-[10px] font-mono mt-1">103.22.43.12 • Last active 2h ago</div>
-              </div>
-              <button className="text-[10px] font-bold uppercase tracking-wider text-[#ff4f4f] border border-[#ff4f4f]/20 px-2 py-1 rounded">Revoke</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* In-App Support Ticket Creation System */}
       <div className="bg-[#1a1a24] border border-white/7 rounded-2xl p-5 space-y-4">
         <h3 className="font-display font-bold text-sm text-[#f0f0f8] flex items-center gap-2">
-           <span className="text-[#a594ff]">🎫</span> In-App Support Ticket Creation System
+           <span className="text-[#a594ff]">🎫</span> Contact Support
         </h3>
         <p className="text-xs text-[#9191a8] leading-relaxed">
           Need help? Submit a dedicated ticket. Our support staff usually replies within 24 hours. (For instant help, use the floating chat widget).

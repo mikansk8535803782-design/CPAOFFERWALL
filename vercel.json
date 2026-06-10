@@ -5,7 +5,7 @@
   "installCommand": "yarn install --frozen-lockfile",
   "functions": {
     "api/chat.ts": {
-      "runtime": "@vercel/node@3.2.24",
+      "runtime": "@vercel/node@5.8.14",
       "maxDuration": 30
     }
   },

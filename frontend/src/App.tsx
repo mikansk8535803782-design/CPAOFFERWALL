@@ -34,8 +34,8 @@ const TabLoadingPlaceholder = () => (
       <div className="w-4 h-4 rounded-full bg-[#7c6cff]"></div>
     </div>
     <div className="space-y-1 text-center">
-      <h3 className="text-sm font-semibold font-display text-white">Syncing Security Core...</h3>
-      <p className="text-[10px] text-[#5a5a72] font-mono tracking-wider uppercase">Venting Code Modules</p>
+      <h3 className="text-sm font-semibold font-display text-white">Loading your workspace…</h3>
+      <p className="text-[10px] text-[#5a5a72] font-mono tracking-wider uppercase">Please wait a moment</p>
     </div>
   </div>
 );
@@ -1154,7 +1154,7 @@ export default function App() {
       db.tx.completed_tasks[completedTaskId].link({ user: liveUser.id })
     ]);
     
-    triggerToast('success', 'Task submitted successfully! Held in verification queues by Admin.');
+    triggerToast('success', 'Task submitted successfully! It will be reviewed shortly.');
   };
 
   const handleCompleteOffer = async (offerId: string) => {
@@ -1289,7 +1289,7 @@ export default function App() {
       db.tx.payouts[wr.id].link({ user: liveUser.id })
     ]);
 
-    triggerToast('success', `Withdrawal submitted! Held for standard verification review.`);
+    triggerToast('success', `Withdrawal request submitted. We will process it shortly.`);
   };
 
   // ─────────────── ADMIN OPERATIONS ───────────────
@@ -1331,7 +1331,7 @@ export default function App() {
     }
 
     await db.transact(txs);
-    triggerToast('success', 'Proof verified! points and cash values credited to standard earner.');
+    triggerToast('success', 'Submission approved! Points and cash credited to the user.');
   };
 
   const handleRejectProof = async (subId: string) => {
@@ -1358,7 +1358,7 @@ export default function App() {
     await db.transact([
       db.tx.users[userId].update({ suspended: true, fraudFlag: false })
     ]);
-    triggerToast('success', 'Account block successful. frozen balance.');
+    triggerToast('success', 'Account suspended successfully.');
   };
 
   const handleToggleSuspendUser = async (userId: string) => {
