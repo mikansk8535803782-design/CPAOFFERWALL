@@ -16,6 +16,7 @@ export const db = init({ appId: APP_ID });
 
 
 import { User, Task, Offer, Transaction, TaskSubmission, WithdrawRequest, Referral, NotificationItem, SystemSettings, SupportTicket } from './types';
+import { secureApi, setAuthToken } from './lib/secureApi';
 
 // Lazy load massive component bundles for optimal bundle splitting and extremely fast initial interactivity times
 const TaskMarketplace = lazy(() => import('./components/TaskMarketplace'));
@@ -344,6 +345,12 @@ export default function App() {
 
   // Toast State
   const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  // InstantDB auth context → feed token to secure API helper.
+  const { user: instantAuthUser } = db.useAuth();
+  useEffect(() => {
+    setAuthToken((instantAuthUser as any)?.refresh_token || null);
+  }, [instantAuthUser]);
 
   // Instant DB Live Queries
   const { isLoading, error, data: dbData } = db.useQuery({
@@ -953,79 +960,29 @@ export default function App() {
 
     setOtpLoading(true);
     try {
-      await db.auth.signInWithMagicCode({ email: otpEmail, code });
+      const authResult: any = await db.auth.signInWithMagicCode({ email: otpEmail, code });
+      // Capture the freshly-issued refresh token so secureApi can call us back
+      // immediately (the useAuth() hook may not have re-rendered yet).
+      const freshToken =
+        authResult?.refresh_token ||
+        authResult?.user?.refresh_token ||
+        (instantAuthUser as any)?.refresh_token;
+      if (freshToken) setAuthToken(freshToken);
 
-      // Registration branch
+      // Registration branch — server-side endpoint creates the row and
+      // credits the sponsor (balance/refs are immutable from the client).
       if (pendingRegistration) {
         const reg = pendingRegistration;
-        let newId = 'USR' + Math.floor(1001 + Math.random() * 8999);
-        while (dbUsers.some(u => u.refCode === newId)) {
-          newId = 'USR' + Math.floor(1001 + Math.random() * 8999);
-        }
-        const uuidId = toUUID(newId);
-
-        const newUser: User = {
-          id: uuidId,
+        const result: any = await secureApi.register({
           fname: reg.fname,
           lname: reg.lname,
-          email: reg.email,
-          pass: '',
           mobile: reg.mobile,
-          role: 'user',
-          points: 50,
-          balance: 2.5,
-          totalEarned: 2.5,
-          totalWithdrawn: 0,
-          tasksCompleted: 0,
-          refs: 0,
-          suspended: false,
-          regDate: new Date().toISOString().split('T')[0],
-          refCode: newId,
           refBy: reg.refBy,
-        };
-
-        const txs: any[] = [db.tx.users[uuidId].update(newUser)];
-
-        if (reg.refBy) {
-          const sponsorUser = dbUsers.find(u => u.refCode.toUpperCase() === reg.refBy);
-          if (sponsorUser) {
-            txs.push(db.tx.users[sponsorUser.id].update({
-              refs: sponsorUser.refs + 1,
-              points: sponsorUser.points + 200,
-              balance: sponsorUser.balance + 10,
-              totalEarned: sponsorUser.totalEarned + 10,
-            }));
-
-            const bonusTxId = toUUID('TXN_REF_' + Date.now() + '_' + Math.random().toString(36).substring(7));
-            txs.push(db.tx.transactions[bonusTxId].update({
-              id: bonusTxId,
-              desc: `Referral signup bonus: @${newUser.fname}`,
-              type: 'referral',
-              amount: 10,
-              pts: 200,
-              status: 'approved',
-              date: new Date().toISOString().split('T')[0],
-              dir: 1,
-              userId: sponsorUser.id,
-            }));
-            txs.push(db.tx.transactions[bonusTxId].link({ user: sponsorUser.id }));
-
-            const bonusNotifId = toUUID('NFT_REF_' + Date.now() + '_' + Math.random().toString(36).substring(7));
-            txs.push(db.tx.notifications[bonusNotifId].update({
-              id: bonusNotifId,
-              icon: '🤝',
-              msg: `Your referral @${newUser.fname} just joined. +₹10.00 credited.`,
-              time: 'Just now',
-              userId: sponsorUser.id,
-            }));
-            txs.push(db.tx.notifications[bonusNotifId].link({ user: sponsorUser.id }));
-          }
-        }
-
-        await db.transact(txs);
-        setSessionUser(newUser);
+        });
+        const created = result?.user as User | undefined;
+        if (created) setSessionUser(created);
         setActiveView('dashboard');
-        triggerToast('success', `Welcome ${newUser.fname}! 50 points credited.`);
+        triggerToast('success', `Welcome ${reg.fname}! Signup bonus credited.`);
 
         // Clean register fields
         setRegFname(''); setRegLname(''); setRegEmail('');
@@ -1037,7 +994,7 @@ export default function App() {
       // Sign-in branch
       const found = dbUsers.find(u => u.email.toLowerCase() === otpEmail.toLowerCase());
       if (!found) {
-        triggerToast('error', 'Account vanished. Please register again.');
+        triggerToast('error', 'Account not found. Please register again.');
         resetOtpFlow();
         return;
       }
@@ -1086,464 +1043,170 @@ export default function App() {
 
   const handleUpdateProfile = async (updates: Partial<User>) => {
     if (!liveUser) return;
-    const txs = [db.tx.users[liveUser.id].update(updates)];
 
-    // If updating check-in state, write an approved transaction log to the audited ledger
+    // Daily check-in is handled by the secure server endpoint (balance/points
+    // are immutable from the client under our InstantDB rules).
     if (updates.lastCheckIn) {
-      const txId = toUUID('TXN_CHECKIN_' + Date.now());
-      txs.push(db.tx.transactions[txId].update({
-        id: txId,
-        desc: `Daily Streak Check-in (Day ${updates.streakCount})`,
-        type: 'task',
-        amount: 1, // Re 1 earned
-        pts: 100, // 100 points
-        status: 'approved',
-        date: new Date().toISOString().split('T')[0],
-        dir: 1,
-        userId: liveUser.id
-      }));
+      try {
+        await secureApi.checkin();
+      } catch (err: any) {
+        triggerToast('error', err?.message || 'Check-in failed.');
+      }
+      return;
     }
 
-    await db.transact(txs);
+    // All remaining profile fields (fname, lname, mobile, upi, trc20, bep20)
+    // are safe and editable directly by the row owner under our rules.
+    const safe: Partial<User> = {};
+    const allowed: (keyof User)[] = ['fname', 'lname', 'mobile', 'upi', 'trc20', 'bep20'];
+    for (const k of allowed) {
+      if (k in updates) (safe as any)[k] = (updates as any)[k];
+    }
+    if (Object.keys(safe).length === 0) return;
+    try {
+      await db.transact([db.tx.users[liveUser.id].update(safe)]);
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Update failed.');
+    }
   };
 
-  // Process task submissions
+  // Process task submissions — server-side endpoint creates submission + pending tx.
   const handleTaskSubmit = async (taskId: string, proofType: 'screenshot' | 'auto', file: File | null, link: string) => {
     if (!liveUser) return;
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    // Send everything to verification queue
-    const subId = toUUID('SUB' + Date.now());
-    const newSub: TaskSubmission = {
-      id: subId,
-      taskId,
-      userId: liveUser.id,
-      userName: liveUser.fname + ' ' + liveUser.lname,
-      proof: file ? `secure.cloudinary.com/earnhub/proof_${liveUser.id}_${file.name}` : (link ? `Input Link: ${link}` : `Auto-Verify System (Wait)`),
-      status: 'pending',
-      submittedAt: new Date().toLocaleString()
-    };
-
-    const txnId = toUUID('TXN' + Date.now());
-    const pendingTx: Transaction = {
-      id: txnId,
-      desc: `${task.title} (Verification Pending)`,
-      type: 'task',
-      amount: 0,
-      pts: task.pts,
-      status: 'pending',
-      date: new Date().toISOString().split('T')[0],
-      dir: 1,
-      taskId,
-      userId: liveUser.id
-    };
-
-    const completedTaskId = toUUID(`${liveUser.id}_${taskId}`);
-
-    await db.transact([
-      db.tx.submissions[subId].update(newSub),
-      db.tx.submissions[subId].link({ user: liveUser.id }),
-      db.tx.transactions[txnId].update(pendingTx),
-      db.tx.transactions[txnId].link({ user: liveUser.id }),
-      db.tx.completed_tasks[completedTaskId].update({
-        id: completedTaskId,
-        userId: liveUser.id,
-        taskId: taskId
-      }),
-      db.tx.completed_tasks[completedTaskId].link({ user: liveUser.id })
-    ]);
-    
-    triggerToast('success', 'Task submitted successfully! It will be reviewed shortly.');
+    const proofRef = file
+      ? `proof_${liveUser.id}_${file.name}`
+      : undefined;
+    try {
+      await secureApi.taskSubmit(taskId, proofRef, link || undefined);
+      triggerToast('success', 'Task submitted successfully! It will be reviewed shortly.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Submission failed.');
+    }
   };
 
   const handleCompleteOffer = async (offerId: string) => {
     if (!liveUser) return;
     const offer = offers.find(o => o.id === offerId);
     if (!offer) return;
-
-    // Send Offerwall to verify queue
-    const subId = toUUID('SUB' + Date.now());
-    const newSub: TaskSubmission = {
-      id: subId,
-      taskId: offerId,
-      userId: liveUser.id,
-      userName: liveUser.fname + ' ' + liveUser.lname,
-      proof: `Offerwall Network Sync (${offer.network})`,
-      status: 'pending',
-      submittedAt: new Date().toLocaleString()
-    };
-
-    const txnId = toUUID('TXN' + Date.now());
-    const pendingTx: Transaction = {
-      id: txnId,
-      desc: `CPA Completed: ${offer.title} (Verification Pending)`,
-      type: 'offer',
-      amount: 0,
-      pts: offer.pts,
-      status: 'pending',
-      date: new Date().toISOString().split('T')[0],
-      dir: 1,
-      taskId: offerId,
-      userId: liveUser.id
-    };
-
-    await db.transact([
-      db.tx.submissions[subId].update(newSub),
-      db.tx.submissions[subId].link({ user: liveUser.id }),
-      db.tx.transactions[txnId].update(pendingTx),
-      db.tx.transactions[txnId].link({ user: liveUser.id })
-    ]);
-
-    triggerToast('info', 'Offer completed and sent to admin verification queue.');
-  };
-
-  const getCommissionOperations = (sourceVal: number, originUser: User): any[] => {
-    if (!originUser || !originUser.refBy) return [];
-    const levels = [0.10, 0.05, 0.02]; // L1 10%, L2 5%, L3 2%
-    let sponsorCode = originUser.refBy;
-    const commTxs: any[] = [];
-
-    let currentSponsorCode = sponsorCode;
-    for (let lvl = 0; lvl < levels.length; lvl++) {
-      if (!currentSponsorCode) break;
-      const targetSponsor = dbUsers.find(x => x.refCode === currentSponsorCode);
-      if (!targetSponsor) break;
-
-      const commission = parseFloat((sourceVal * levels[lvl]).toFixed(2));
-      const commPts = Math.round(commission * (systemSettings?.ptsToCashRate || 20));
-      
-      if (commission > 0) {
-        const txId = toUUID('TXN_COMM_' + Date.now() + '_' + lvl + '_' + Math.random().toString(36).substring(7));
-        commTxs.push(db.tx.transactions[txId].update({
-          id: txId,
-          desc: `L${lvl + 1} Commission from @${originUser.fname}`,
-          type: 'referral',
-          amount: commission,
-          pts: commPts,
-          status: 'approved',
-          date: new Date().toISOString().split('T')[0],
-          dir: 1,
-          userId: targetSponsor.id
-        }));
-        commTxs.push(db.tx.transactions[txId].link({ user: targetSponsor.id }));
-
-        const notifId = toUUID('NFT_COMM_' + Date.now() + '_' + lvl + '_' + Math.random().toString(36).substring(7));
-        commTxs.push(db.tx.notifications[notifId].update({
-          id: notifId,
-          icon: '🎁',
-          msg: `You received ₹${commission.toFixed(2)} (${commPts} PTS) as L${lvl + 1} Referral Commission from @${originUser.fname}!`,
-          time: 'Just now',
-          userId: targetSponsor.id
-        }));
-        commTxs.push(db.tx.notifications[notifId].link({ user: targetSponsor.id }));
-
-        commTxs.push(db.tx.users[targetSponsor.id].update({
-          balance: targetSponsor.balance + commission,
-          points: targetSponsor.points + commPts,
-          totalEarned: targetSponsor.totalEarned + commission
-        }));
-      }
-
-      currentSponsorCode = targetSponsor.refBy || '';
+    try {
+      // Offers are stored in client memory only (INITIAL_OFFERS); we still
+      // submit them through the secure endpoint so the audit trail is the same.
+      await secureApi.taskSubmit(offerId, `Offerwall Network Sync (${offer.network})`);
+      triggerToast('info', 'Offer submitted for verification.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Submission failed.');
     }
-    return commTxs;
   };
 
   const handleWithdrawalRequest = async (amount: number, method: string, dest: string) => {
     if (!liveUser) return;
-
-    const reqId = toUUID('WD' + Date.now());
-    
-    const tx: Transaction = {
-      id: reqId,
-      desc: `${method} Withdrawal request processed to: ${dest}`,
-      type: 'withdraw',
-      amount: -amount,
-      pts: 0,
-      status: 'pending',
-      date: new Date().toISOString().split('T')[0],
-      dir: -1,
-      userId: liveUser.id
-    };
-
-    const wr: WithdrawRequest = {
-      id: reqId,
-      userId: liveUser.id,
-      userName: liveUser.fname + ' ' + liveUser.lname,
-      method,
-      dest,
-      amount,
-      status: 'pending',
-      date: new Date().toISOString().split('T')[0]
-    };
-
-    await db.transact([
-      db.tx.users[liveUser.id].update({
-        balance: liveUser.balance - amount,
-        totalWithdrawn: liveUser.totalWithdrawn + amount
-      }),
-      db.tx.transactions[tx.id].update(tx),
-      db.tx.transactions[tx.id].link({ user: liveUser.id }),
-      db.tx.payouts[wr.id].update(wr),
-      db.tx.payouts[wr.id].link({ user: liveUser.id })
-    ]);
-
-    triggerToast('success', `Withdrawal request submitted. We will process it shortly.`);
+    try {
+      await secureApi.withdraw(amount, method, dest);
+      triggerToast('success', `Withdrawal request submitted. We will process it shortly.`);
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Withdrawal request failed.');
+    }
   };
 
   // ─────────────── ADMIN OPERATIONS ───────────────
   const handleApproveProof = async (subId: string) => {
-    const sub = submissions.find(s => s.id === subId);
-    if (!sub) return;
-
-    const task = (tasks.find(t => t.id === sub.taskId) || offers.find(o => o.id === sub.taskId)) as any;
-    if (!task) return;
-
-    const targetUser = dbUsers.find(x => x.id === sub.userId);
-    if (!targetUser) return;
-
-    const rewardPts = Math.round(task.pts * (systemSettings?.vipMultiplier || 1.0));
-    const txs: any[] = [
-      db.tx.users[targetUser.id].update({
-        balance: targetUser.balance + task.value,
-        points: targetUser.points + rewardPts,
-        totalEarned: targetUser.totalEarned + task.value,
-        tasksCompleted: targetUser.tasksCompleted + 1
-      }),
-      db.tx.submissions[subId].update({ status: 'approved' })
-    ];
-
-    // Cascade Commission directly inside the same single transaction list
-    if (targetUser.refBy) {
-      const commissionOperations = getCommissionOperations(task.value, targetUser);
-      txs.push(...commissionOperations);
+    try {
+      await secureApi.adminApproveProof(subId);
+      triggerToast('success', 'Submission approved! Points and cash credited to the user.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Approve failed.');
     }
-
-    const pendingTx = transactions.find(tx => tx.taskId === sub.taskId && tx.status === 'pending');
-    if (pendingTx) {
-      txs.push(db.tx.transactions[pendingTx.id].update({
-        status: 'approved',
-        amount: task.value,
-        pts: rewardPts,
-        desc: task.title
-      }));
-    }
-
-    await db.transact(txs);
-    triggerToast('success', 'Submission approved! Points and cash credited to the user.');
   };
 
   const handleRejectProof = async (subId: string) => {
-    const sub = submissions.find(s => s.id === subId);
-    if (!sub) return;
-
-    const txs = [
-      db.tx.submissions[subId].update({ status: 'rejected' })
-    ];
-
-    const pendingTx = transactions.find(tx => tx.taskId === sub.taskId && tx.status === 'pending');
-    if (pendingTx) {
-      txs.push(db.tx.transactions[pendingTx.id].update({
-        status: 'rejected',
-        desc: `${pendingTx.desc.replace(' (Verification Pending)', '')} (Rejected)`
-      }));
+    try {
+      await secureApi.adminRejectProof(subId);
+      triggerToast('info', 'Task submission rejected.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Reject failed.');
     }
-
-    await db.transact(txs);
-    triggerToast('info', 'Task submission rejected completely.');
   };
 
   const handleSuspendUser = async (userId: string) => {
-    await db.transact([
-      db.tx.users[userId].update({ suspended: true, fraudFlag: false })
-    ]);
-    triggerToast('success', 'Account suspended successfully.');
+    try {
+      await secureApi.adminToggleSuspend(userId);
+      triggerToast('success', 'Account suspended successfully.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Suspend failed.');
+    }
   };
 
   const handleToggleSuspendUser = async (userId: string) => {
-    const userToToggle = dbUsers.find(u => u.id === userId);
-    if (!userToToggle) return;
-    await db.transact([
-      db.tx.users[userId].update({ suspended: !userToToggle.suspended })
-    ]);
-    triggerToast('success', 'User status altered.');
+    try {
+      await secureApi.adminToggleSuspend(userId);
+      triggerToast('success', 'User status updated.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Update failed.');
+    }
   };
 
   const handleApprovePayout = async (payId: string) => {
-    const request = payouts.find(p => p.id === payId);
-    if (!request) return;
-    const txs = [db.tx.payouts[payId].update({ status: 'approved' })];
-
-    if (request) {
-      const notifId = toUUID('NFT_PAY_APR_' + Date.now());
-      txs.push(db.tx.notifications[notifId].update({
-        id: notifId,
-        icon: '💸',
-        msg: `Your withdrawal request of ₹${request.amount.toFixed(2)} via ${request.method} was approved and marked paid! Check your account.`,
-        time: 'Just now',
-        userId: request.userId
-      }));
-      txs.push(db.tx.notifications[notifId].link({ user: request.userId }));
+    try {
+      await secureApi.adminApprovePayout(payId);
+      triggerToast('success', 'Withdrawal payout marked paid.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Approve payout failed.');
     }
-
-    await db.transact(txs);
-    triggerToast('success', 'Withdrawal requests payout marked paid!');
   };
 
   const handleRejectPayout = async (payId: string) => {
-    const request = payouts.find(p => p.id === payId);
-    if (!request) return;
-
-    const targetUser = dbUsers.find(u => u.id === request.userId);
-    if (!targetUser) return;
-
-    const refundAmt = request.amount;
-    const refundPts = refundAmt * systemSettings.ptsToCashRate;
-
-    const txId = toUUID('TXN' + Date.now());
-    const tx: Transaction = {
-      id: txId,
-      desc: `Refund for rejected withdrawal request #${payId}`,
-      type: 'withdraw',
-      amount: request.amount,
-      pts: Math.round(refundPts),
-      status: 'approved',
-      date: new Date().toISOString().split('T')[0],
-      dir: 1
-    };
-
-    const notifId = toUUID('NFT_PAY_REJ_' + Date.now());
-
-    await db.transact([
-      db.tx.users[targetUser.id].update({
-        balance: targetUser.balance + refundAmt,
-        points: targetUser.points + refundPts
-      }),
-      db.tx.payouts[payId].update({ status: 'rejected' }),
-      db.tx.transactions[txId].update(tx),
-      db.tx.notifications[notifId].update({
-        id: notifId,
-        icon: '❌',
-        msg: `Your withdrawal request of ₹${request.amount.toFixed(2)} was rejected. Points (₹${request.amount.toFixed(2)}) refunded/credited back.`,
-        time: 'Just now',
-        userId: targetUser.id
-      }),
-      db.tx.notifications[notifId].link({ user: targetUser.id })
-    ]);
-
-    triggerToast('success', 'Withdrawal request rejected. Funds returned immediately!');
+    try {
+      await secureApi.adminRejectPayout(payId);
+      triggerToast('success', 'Withdrawal rejected. Funds returned.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Reject payout failed.');
+    }
   };
 
+
   const handleUpdateSettings = async (newSettings: SystemSettings) => {
-    await db.transact([
-      db.tx.system_settings[toUUID('global_settings')].update(newSettings)
-    ]);
-    triggerToast('success', 'System parameters & toggles updated!');
+    try {
+      await secureApi.adminUpdateSettings(toUUID('global_settings'), newSettings as any);
+      triggerToast('success', 'System parameters updated.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Update failed.');
+    }
   };
 
   const handleUpdateUserFields = async (userId: string, fields: Partial<User>) => {
-    await db.transact([
-      db.tx.users[userId].update(fields)
-    ]);
-    triggerToast('success', 'User stats & permissions applied!');
+    try {
+      await secureApi.adminUpdateUser(userId, fields as any);
+      triggerToast('success', 'User updated.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Update failed.');
+    }
   };
 
   const handleDeleteUser = async (userId: string) => {
-    const runs: any[] = [];
-    const targetUuid = toUUID(userId);
-
-    // 1. Delete associated Task_Ledger records
-    allTaskLedgerList.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.Task_Ledger[item.id].delete());
-      }
-    });
-
-    // 2. Delete associated transactions
-    transactions.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.transactions[item.id].delete());
-      }
-    });
-
-    // 3. Delete associated submissions
-    submissions.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.submissions[item.id].delete());
-      }
-    });
-
-    // 4. Delete associated payouts / withdraw requests
-    payouts.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.payouts[item.id].delete());
-      }
-    });
-
-    // 5. Delete associated notifications
-    allNotificationsList.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.notifications[item.id].delete());
-      }
-    });
-
-    // 6. Delete associated support tickets
-    supportTickets.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.support_tickets[item.id].delete());
-      }
-    });
-
-    // 7. Delete associated completed tasks markers
-    allCompletedTasksList.forEach(item => {
-      if (item.userId === userId || item.userId === targetUuid) {
-        runs.push(db.tx.completed_tasks[item.id].delete());
-      }
-    });
-
-    // 8. Finally delete the user root node
-    runs.push(db.tx.users[userId].delete());
-
-    await db.transact(runs);
-    triggerToast('success', 'User node completely deleted and all related graph/ledger tables sanitized!');
+    try {
+      await secureApi.adminDeleteUser(userId);
+      triggerToast('success', 'User deleted along with all related records.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Delete failed.');
+    }
   };
 
   const handleResolveTicket = async (ticketId: string, replyMessage: string) => {
-    const tkt = supportTickets.find(t => t.id === ticketId);
-    if (!tkt) return;
-
-    const notifId = toUUID('NFT' + Date.now());
-    await db.transact([
-      db.tx.support_tickets[ticketId].update({ status: 'resolved', reply: replyMessage }),
-      db.tx.notifications[notifId].update({
-        id: notifId,
-        icon: '💬',
-        msg: `Support reply for ticket #${ticketId}: "${replyMessage}"`,
-        time: 'Just now',
-        userId: tkt.userId
-      }),
-      db.tx.notifications[notifId].link({ user: tkt.userId })
-    ]);
-    triggerToast('success', 'User support problem marked resolved!');
+    try {
+      await secureApi.adminResolveTicket(ticketId, replyMessage);
+      triggerToast('success', 'Ticket resolved.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Resolve failed.');
+    }
   };
 
   const handleAddNotification = async (messageText: string) => {
-    const notifId = toUUID('NFT' + Date.now());
-    const runs = [
-      db.tx.notifications[notifId].update({
-        id: notifId,
-        icon: '📢',
-        msg: messageText,
-        time: 'Just now'
-      })
-    ];
-    // Link to all active users so they receive this global broadcast
-    dbUsers.forEach(u => {
-      runs.push(db.tx.notifications[notifId].link({ user: u.id }));
-    });
-    await db.transact(runs);
-    triggerToast('success', 'Global broadcast notification sent to all active members!');
+    try {
+      await secureApi.adminBroadcast(messageText);
+      triggerToast('success', 'Broadcast notification sent to all members.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Broadcast failed.');
+    }
   };
 
   const handleDismissNotification = async (notifId: string) => {
@@ -1573,6 +1236,8 @@ export default function App() {
 
   const handleAddSupportTicket = async (subject: string, message: string) => {
     if (!liveUser) return;
+    // Support ticket creation is allowed directly by DB rules
+    // (auth.id == newData.userId && status == 'pending')
     const ticketId = 'TKT' + Math.floor(100 + Math.random() * 900);
     const uuidId = toUUID(ticketId);
     const newTicket: SupportTicket = {
@@ -1585,65 +1250,50 @@ export default function App() {
       status: 'pending',
       createdAt: new Date().toISOString()
     };
-    await db.transact([
-      db.tx.support_tickets[uuidId].update(newTicket)
-    ]);
-    triggerToast('success', 'Your ticket has been submitted to Support!');
+    try {
+      await db.transact([db.tx.support_tickets[uuidId].update(newTicket)]);
+      triggerToast('success', 'Your ticket has been submitted to Support!');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Failed to submit ticket.');
+    }
   };
 
   const handleLinkSponsor = async (sponsorId: string) => {
     if (!liveUser) return;
-    
-    // Check if sponsor exists
-    const sponsorObj = dbUsers.find(u => u.refCode === sponsorId);
-    if (!sponsorObj) {
-      triggerToast('error', 'Invalid Sponsor UID');
-      return;
+    try {
+      await secureApi.linkSponsor(sponsorId);
+      triggerToast('success', 'Linked successfully to sponsor.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Linking failed.');
     }
-    
-    await db.transact([
-      db.tx.users[liveUser.id].update({ refBy: sponsorId }),
-      db.tx.users[sponsorObj.id].update({ refs: sponsorObj.refs + 1 })
-    ]);
-    
-    triggerToast('success', `Linked successfully to sponsor!`);
   };
 
   const handleAddTask = async (newTask: Task) => {
     const uuidId = toUUID(newTask.id);
-    await db.transact([
-      db.tx.tasks[uuidId].update({ ...newTask, id: uuidId })
-    ]);
-    triggerToast('success', `Campaign "${newTask.title}" launched successfully!`);
+    try {
+      await secureApi.adminAddTask({ ...newTask, id: uuidId });
+      triggerToast('success', `Campaign "${newTask.title}" launched successfully!`);
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Could not add campaign.');
+    }
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    await db.transact([
-      db.tx.tasks[toUUID(taskId)].delete()
-    ]);
-    triggerToast('info', 'Campaign deleted from active listing.');
+    try {
+      await secureApi.adminDeleteTask(toUUID(taskId));
+      triggerToast('info', 'Campaign deleted.');
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Delete failed.');
+    }
   };
 
   const handleAwardReward = async (pts: number, value: number, desc: string) => {
     if (!liveUser) return;
-    const txId = toUUID('TXN' + Date.now());
-    await db.transact([
-      db.tx.users[liveUser.id].update({
-        points: liveUser.points + pts,
-        balance: liveUser.balance + value,
-        totalEarned: liveUser.totalEarned + value
-      }),
-      db.tx.transactions[txId].update({
-        id: txId,
-        desc,
-        type: 'task',
-        amount: value,
-        pts: pts,
-        status: 'approved',
-        date: new Date().toISOString().split('T')[0],
-        dir: 1
-      })
-    ]);
+    try {
+      await secureApi.adminAwardReward(liveUser.id, pts, value, desc);
+    } catch (err: any) {
+      triggerToast('error', err?.message || 'Reward failed.');
+    }
   };
 
   return (

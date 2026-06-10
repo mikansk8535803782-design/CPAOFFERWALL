@@ -32,7 +32,13 @@ just import the repo and deploy.
 
 4. **Click Deploy**.
 
-5. **Configure the CPALead postback URL** (in your CPALead dashboard → Postback):
+5. **Push InstantDB permission rules** (one-time + on every rules edit):
+   ```bash
+   INSTANT_ADMIN_TOKEN=... npx instant-cli@latest push perms
+   ```
+   See `SECURITY_AUDIT.md` for the full hardening report.
+
+6. **Configure the CPALead postback URL** (in your CPALead dashboard → Postback):
    ```
    https://YOUR-APP.vercel.app/api/cpalead-postback?subid={subid}&lead_id={lead_id}&payout={payout}&password=YOUR_POSTBACK_PASSWORD&campaign_id={campaign_id}&campaign_name={campaign_name}&country_iso={country_iso}&ip_address={ip_address}
    ```
