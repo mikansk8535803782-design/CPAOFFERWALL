@@ -168,4 +168,10 @@ export interface NotificationItem {
   msg: string;
   time: string;
   userId?: string;
+  /** Optional media URL — when set, renders inline below the message. */
+  mediaUrl?: string;
+  /** `'image'` or `'video'`. Auto-detected from URL if omitted. */
+  mediaType?: 'image' | 'video';
+  /** Optional outbound link (call-to-action target). */
+  linkUrl?: string;
 }

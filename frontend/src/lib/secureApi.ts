@@ -61,8 +61,13 @@ export const secureApi = {
     call('admin', { action: 'delete-user', payload: { userId } }),
   adminResolveTicket: (ticketId: string, reply: string) =>
     call('admin', { action: 'resolve-ticket', payload: { ticketId, reply } }),
-  adminBroadcast: (message: string) =>
-    call('admin', { action: 'broadcast', payload: { message } }),
+  adminBroadcast: (payload: {
+    message: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video';
+    linkUrl?: string;
+    icon?: string;
+  }) => call('admin', { action: 'broadcast', payload }),
   adminAddTask: (task: Record<string, any>) =>
     call('admin', { action: 'add-task', payload: { task } }),
   adminDeleteTask: (taskId: string) =>

@@ -1,6 +1,11 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * EarnHelper — the on-app support assistant.
+ * Talks to /api/chat for AI replies, with a tight client-side context
+ * scoped to the requesting user only. Sensitive fields (UPI, wallet
+ * addresses) are masked before they leave the browser.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -19,181 +24,146 @@ interface HelpChatbotProps {
   onClose?: () => void;
 }
 
-export default function HelpChatbot({ user, onClose }: HelpChatbotProps) {
+function mask(v: string | undefined, keep = 4): string {
+  if (!v) return '';
+  const s = String(v);
+  if (s.length <= keep) return '•'.repeat(s.length);
+  return s.slice(0, keep) + '•'.repeat(Math.min(6, s.length - keep));
+}
+
+function timeOnly() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+export default function HelpChatbot({ user }: HelpChatbotProps) {
+  const firstName = user.fname || 'there';
   const [messages, setMessages] = useState<Message[]>([
     {
       sender: 'bot',
-      text: `Hello ${user.fname}! I am your Instant DB-backed Help Chatbot. How can I assist you today?`,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      id: 'welcome-msg'
-    }
+      text: `Hi ${firstName} 👋  I'm EarnHelper — your on-app assistant. I can help with your tasks, withdrawals, coins and referrals. What would you like to know?`,
+      time: timeOnly(),
+      id: 'welcome-msg',
+    },
   ]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Live Query user's Task_Ledger and payouts records from Instant DB
+  // Live queries — own transactions, submissions, payouts
   const { data: dbData, isLoading } = db.useQuery({
-    Task_Ledger: {
-      $: {
-        where: { userId: user.id }
-      }
-    },
-    payouts: {
-      $: {
-        where: { userId: user.id }
-      }
-    }
+    transactions: { $: { where: { userId: user.id } } },
+    submissions: { $: { where: { userId: user.id } } },
+    payouts: { $: { where: { userId: user.id } } },
   });
 
-  const taskLedgers = (dbData?.Task_Ledger as any[]) || [];
-  const payoutsLedger = (dbData?.payouts as any[]) || [];
+  const transactions = (dbData?.transactions as any[]) || [];
+  const submissions = (dbData?.submissions as any[]) || [];
+  const payouts = (dbData?.payouts as any[]) || [];
 
-  // Scroll to bottom whenever messages list modifications happen or when bot typing state shifts
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleAction = async (textStr: string) => {
-    const trimmedInput = textStr.trim();
-    if (!trimmedInput) return;
+  // Build the AI context once per send — keeps it cheap and consistent.
+  const buildContext = () => {
+    const lastTask = transactions
+      .filter(t => t.type === 'task' || t.type === 'offer' || t.type === 'cpa')
+      .slice(-1)[0];
+    const lastPayout = payouts.slice(-1)[0];
+    const pendingSubs = submissions.filter(s => s.status === 'pending').length;
+    const recentTransactions = transactions
+      .slice(-5)
+      .map(t => ({
+        date: t.date,
+        type: t.type,
+        amount: Number(t.amount || 0),
+        pts: Number(t.pts || 0),
+        status: t.status,
+        desc: String(t.desc || '').slice(0, 80),
+      }));
 
-    // Acknowledge custom message immediately in the log list
-    const userMsg: Message = {
-      sender: 'user',
-      text: trimmedInput,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      id: 'usr-' + Date.now()
+    return {
+      name: `${user.fname} ${user.lname}`,
+      role: user.role,
+      points: user.points,
+      balance: user.balance,
+      totalEarned: user.totalEarned,
+      totalWithdrawn: user.totalWithdrawn,
+      tasksCompleted: user.tasksCompleted,
+      refs: user.refs,
+      upi: mask(user.upi, 4),
+      trc20: mask(user.trc20, 6),
+      bep20: mask(user.bep20, 6),
+      pendingSubmissions: pendingSubs,
+      lastTaskStatus: lastTask
+        ? `"${lastTask.desc || lastTask.type}" — ${lastTask.status}`
+        : 'None',
+      lastPayoutStatus: lastPayout
+        ? `₹${Number(lastPayout.amount || 0).toFixed(2)} via ${lastPayout.method} — ${lastPayout.status}`
+        : 'None',
+      recentTransactions,
     };
+  };
 
-    setMessages(prev => [...prev, userMsg]);
+  // Quick-reply chips — server still handles the actual reply via Gemini
+  const QUICK_CHIPS = [
+    { text: 'How much can I withdraw?', icon: '💸' },
+    { text: 'Show my recent tasks', icon: '📋' },
+    { text: 'Last withdrawal status', icon: '🕒' },
+    { text: 'How do referrals work?', icon: '🤝' },
+    { text: 'How to earn more coins?', icon: '💎' },
+  ];
+
+  const handleSend = async (raw: string) => {
+    const text = raw.trim();
+    if (!text || isTyping) return;
+
+    setMessages(prev => [...prev, { sender: 'user', text, time: timeOnly(), id: 'usr-' + Date.now() }]);
     setIsTyping(true);
 
     let reply = '';
-
-    // Check predefined actions
-    if (['Check Last Task Status', 'Withdrawal Status', 'Withdrawal Query', 'Points Conversion Help', 'App Error'].includes(trimmedInput)) {
-      // Artificial delay for rule-based matching replies
-      await new Promise(resolve => setTimeout(resolve, 800));
-      switch (trimmedInput) {
-        case 'Check Last Task Status': {
-          if (isLoading) {
-            reply = 'Querying the Task_Ledger schema in real-time, please wait...';
-          } else if (taskLedgers.length === 0) {
-            reply = 'No record found under your account in the the Task_Ledger schema. Try in a few moments or perform some tasks first!';
-          } else {
-            // Take the newest record (based on array position, since we push new entries)
-            const latestRecord = taskLedgers[taskLedgers.length - 1];
-            const title = latestRecord.taskTitle || 'Unknown Campaign';
-            const statusLabel = latestRecord.status || 'Pending';
-            reply = `Status Query successfully retrieved! Name: "${title}" | Current Status: [${statusLabel}]`;
-          }
-          break;
-        }
-        case 'Withdrawal Status':
-        case 'Withdrawal Query': {
-          if (isLoading) {
-            reply = 'Checking the payouts ledger in real-time. Please wait...';
-          } else if (payoutsLedger.length === 0) {
-            reply = 'No payout or withdrawal requests found under your account. Visit the Wallet view to request a withdrawal!';
-          } else {
-            const latestPayout = payoutsLedger[payoutsLedger.length - 1];
-            const amountStr = latestPayout.amount ? `₹${parseFloat(latestPayout.amount).toFixed(2)}` : 'N/A';
-            const methodStr = latestPayout.method || 'payment';
-            const statusStr = latestPayout.status ? latestPayout.status.toUpperCase() : 'PENDING';
-            const dateStr = latestPayout.date || 'recently';
-            
-            let statusExplain = '';
-            if (statusStr === 'PENDING') {
-              statusExplain = '🕒 This is currently held for our standard review (usually takes 4-12 hours). Please refrain from duplicate inquiries.';
-            } else if (statusStr === 'APPROVED') {
-              statusExplain = '✅ This payout was processed and marked as PAID in our ledger database! Please verify your wallet or payment method.';
-            } else if (statusStr === 'REJECTED') {
-              statusExplain = '❌ This request was rejected and refunded back to your balance due to invalid details or audit criteria anomalies.';
-            }
-            
-            reply = `📢 Last Withdrawal Status Query:\n\n• Amount: ${amountStr}\n• Method: ${methodStr}\n• Request Date: ${dateStr}\n• Status: [${statusStr}]\n\n${statusExplain}`;
-          }
-          break;
-        }
-        case 'Points Conversion Help': {
-          reply = 'Our conversion policy is clear: 20 Points = ₹1. Once your balance hits the threshold of ₹100, you are allowed to request instant UPI, USDT TRC20, or BEP20 withdrawals directly via the Wallet section!';
-          break;
-        }
-        case 'App Error': {
-          reply = 'Encountered an application glitch? 1) Make sure you are not on a proxy or VPN. 2) Wipe your local browser storage & refresh. 3) Verify if device IP has been flagged by the anti-cloning checker. If none work, submit a manual support ticket.';
-          break;
-        }
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, userContext: buildContext() }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        reply = json.text || '';
       }
-    } else {
-      // General user queries: Fetch matching replies from our server-side secure Gemini route
-      try {
-        const userContext = {
-          id: user.id,
-          name: `${user.fname} ${user.lname}`,
-          role: user.role,
-          points: user.points,
-          balance: user.balance,
-          tasksCompleted: user.tasksCompleted,
-          refs: user.refs,
-          lastTaskStatus: (() => {
-            if (taskLedgers.length === 0) return 'None';
-            const latestRecord = taskLedgers[taskLedgers.length - 1];
-            return `"${latestRecord.taskTitle || ''}" - Status: ${latestRecord.status || ''}`;
-          })(),
-          lastPayoutStatus: (() => {
-            if (payoutsLedger.length === 0) return 'None';
-            const latestPayout = payoutsLedger[payoutsLedger.length - 1];
-            return `Amount: ₹${latestPayout.amount || 0} - Status: ${latestPayout.status || ''}`;
-          })()
-        };
+    } catch {
+      // fall through to local fallback
+    }
 
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: trimmedInput, userContext })
-        });
-
-        if (res.ok) {
-          const result = await res.json();
-          reply = result.text;
-        } else {
-          throw new Error('API server returned error code');
-        }
-      } catch (err) {
-        console.warn('Support Chatbot server API failed, using standard response fallback:', err);
-        reply = `Thank you for contacting EarnHub help. You queried: "${trimmedInput}". If you have missing points or delayed payouts, please raise a detailed support ticket in the Support Desks section. Our live admins will audit and respond!`;
-      }
+    if (!reply) {
+      reply = isLoading
+        ? 'One moment — pulling your latest activity from the database…'
+        : `I'm having trouble reaching the assistant right now. You can also raise a ticket from the Support section and a human will reply.`;
     }
 
     setMessages(prev => [
       ...prev,
-      {
-        sender: 'bot',
-        text: reply || 'System under maintenance. Please try again.',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        id: 'bot-' + Date.now()
-      }
+      { sender: 'bot', text: reply, time: timeOnly(), id: 'bot-' + Date.now() },
     ]);
     setIsTyping(false);
   };
 
   const onSubmitForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-    const txt = inputText;
+    const t = inputText;
     setInputText('');
-    handleAction(txt);
+    handleSend(t);
   };
 
   return (
     <div className="flex flex-col h-full bg-[#1b1b26] text-white">
-      {/* Scrollable Message History Panel */}
+      {/* Message list */}
       <div className="flex-1 p-4 overflow-y-auto space-y-3 scrollbar-none flex flex-col">
         {messages.map((m) => (
           <div
             key={m.id}
-            className={`flex flex-col max-w-[80%] ${
+            className={`flex flex-col max-w-[82%] ${
               m.sender === 'user' ? 'self-end items-end' : 'self-start items-start'
             }`}
           >
@@ -206,35 +176,29 @@ export default function HelpChatbot({ user, onClose }: HelpChatbotProps) {
             >
               <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
             </div>
-            {m.time && (
-              <span className="text-[9px] text-[#5a5a72] mt-0.5 px-1">{m.time}</span>
-            )}
+            {m.time && <span className="text-[9px] text-[#5a5a72] mt-0.5 px-1">{m.time}</span>}
           </div>
         ))}
 
         {isTyping && (
-          <div className="self-start bg-[#111118]/50 border border-white/5 px-4 py-2.5 rounded-full text-[10px] text-[#9191a8] flex items-center gap-1.5 animate-pulse">
-            <span className="w-1.5 h-1.5 bg-[#7c6cff] rounded-full animate-bounce"></span>
-            <span className="w-1.5 h-1.5 bg-[#7c6cff] rounded-full animate-bounce [animation-delay:0.2s]"></span>
-            <span className="w-1.5 h-1.5 bg-[#7c6cff] rounded-full animate-bounce [animation-delay:0.4s]"></span>
-            <span>Typing reply...</span>
+          <div className="self-start bg-[#111118]/60 border border-white/5 px-3.5 py-2 rounded-full text-[10px] text-[#9191a8] flex items-center gap-1.5 animate-pulse">
+            <span className="w-1.5 h-1.5 bg-[#7c6cff] rounded-full animate-bounce" />
+            <span className="w-1.5 h-1.5 bg-[#7c6cff] rounded-full animate-bounce [animation-delay:0.2s]" />
+            <span className="w-1.5 h-1.5 bg-[#7c6cff] rounded-full animate-bounce [animation-delay:0.4s]" />
+            <span>EarnHelper is typing</span>
           </div>
         )}
         <div ref={scrollRef} />
       </div>
 
-      {/* Horizontal Row of Quick-Reply Action Chips */}
+      {/* Quick-reply chips */}
       <div className="px-3 py-2 bg-[#12121a]/80 border-t border-white/5 flex gap-1.5 overflow-x-auto scrollbar-none select-none shrink-0">
-        {[
-          { text: 'Check Last Task Status', icon: '🔍' },
-          { text: 'Withdrawal Status', icon: '💸' },
-          { text: 'Points Conversion Help', icon: '💰' },
-          { text: 'App Error', icon: '🚨' }
-        ].map((chip) => (
+        {QUICK_CHIPS.map((chip) => (
           <button
             key={chip.text}
-            onClick={() => handleAction(chip.text)}
+            onClick={() => handleSend(chip.text)}
             disabled={isTyping}
+            data-testid={`chat-chip-${chip.text.toLowerCase().replace(/\s+/g, '-')}`}
             className="flex items-center gap-1 shrink-0 bg-[#7c6cff]/8 text-[#a594ff] hover:bg-[#7c6cff]/15 active:scale-95 border border-[#7c6cff]/20 font-semibold px-2.5 py-1.5 rounded-xl text-[10px] transition-all cursor-pointer whitespace-nowrap disabled:opacity-50"
           >
             <span>{chip.icon}</span>
@@ -243,7 +207,7 @@ export default function HelpChatbot({ user, onClose }: HelpChatbotProps) {
         ))}
       </div>
 
-      {/* Inline Text Input Area Layout */}
+      {/* Input */}
       <form
         onSubmit={onSubmitForm}
         className="p-3 bg-[#111118] border-t border-white/5 flex gap-2 shrink-0"
@@ -253,12 +217,15 @@ export default function HelpChatbot({ user, onClose }: HelpChatbotProps) {
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           disabled={isTyping}
-          placeholder={isTyping ? "Waiting for response..." : "Ask me anything..."}
+          placeholder={isTyping ? 'Waiting for response…' : 'Ask EarnHelper anything about your account…'}
+          maxLength={500}
           className="flex-1 bg-[#1a1a24] border border-white/8 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#7c6cff]/50 placeholder-[#5a5a72] transition-colors disabled:opacity-50"
+          data-testid="chat-input"
         />
         <button
           type="submit"
           disabled={isTyping || !inputText.trim()}
+          data-testid="chat-send-btn"
           className="bg-[#7c6cff] hover:bg-[#6b5bef] active:scale-95 text-white text-[11px] font-bold px-3 py-2 rounded-xl transition-all shadow-md flex items-center justify-center cursor-pointer disabled:opacity-40"
         >
           Send

@@ -28,7 +28,13 @@ interface AdminPanelProps {
   supportTickets?: SupportTicket[];
   onResolveTicket?: (ticketId: string, replyMessage: string) => void;
   cpaConversions?: CpaConversion[];
-  onAddNotification?: (messageText: string) => void;
+  onAddNotification?: (payload: {
+    message: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video';
+    linkUrl?: string;
+    icon?: string;
+  }) => void;
   onDeleteUser?: (userId: string) => void;
   forceActiveTab?: string;
 }
@@ -76,6 +82,11 @@ export default function AdminPanel({
   const [promoText, setPromoText] = useState(systemSettings.promoText || 'Double points activated on all mobile app campaigns for the next 24 hours!');
   const [promoActive, setPromoActive] = useState(!!systemSettings.promoActive);
   const [notifMessage, setNotifMessage] = useState('');
+  const [notifMediaUrl, setNotifMediaUrl] = useState('');
+  const [notifMediaType, setNotifMediaType] = useState<'auto' | 'image' | 'video'>('auto');
+  const [notifLinkUrl, setNotifLinkUrl] = useState('');
+  const [notifIcon, setNotifIcon] = useState('📢');
+  const [notifUploadPreview, setNotifUploadPreview] = useState<string>('');
   const [ticketReplyText, setTicketReplyText] = useState<Record<string, string>>({});
   const [hoveredBarId, setHoveredBarId] = useState<string | null>(null);
 
@@ -2401,35 +2412,174 @@ export default function AdminPanel({
           {/* Global push notification center */}
           <div className="bg-[#1a1a24] border border-white/7 rounded-2xl p-6 space-y-4">
             <h3 className="font-display font-black text-sm text-[#f0f0f8] flex items-center gap-2">
-              <span>🔔 Send Global Push Broadcast Alerts</span>
+              <span>📣 Broadcast Announcement</span>
             </h3>
-            <p className="text-xs text-[#9191a8]">Instantly inject a customized notification alert into the notification menu of all active users. Perfect for payouts completed or system maintenance announcements.</p>
+            <p className="text-xs text-[#9191a8]">
+              Push a notification to every active member — plain text, or attach an image / video / link. Useful for product updates, contests, payouts, maintenance, etc.
+            </p>
 
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (!notifMessage.trim()) return;
-              onAddNotification?.(notifMessage);
-              setNotifMessage('');
-              alert('Broadcast push notification successfully pushed to all users!');
-            }} className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!notifMessage.trim()) return;
+                onAddNotification?.({
+                  message: notifMessage.trim(),
+                  mediaUrl: notifMediaUrl.trim() || undefined,
+                  mediaType: notifMediaType === 'auto' ? undefined : notifMediaType,
+                  linkUrl: notifLinkUrl.trim() || undefined,
+                  icon: notifIcon,
+                });
+                setNotifMessage('');
+                setNotifMediaUrl('');
+                setNotifMediaType('auto');
+                setNotifLinkUrl('');
+                setNotifIcon('📢');
+                setNotifUploadPreview('');
+              }}
+              className="space-y-4"
+            >
+              {/* Icon picker */}
               <div className="space-y-1.5">
-                <label className="text-[10px] text-[#9191a8] uppercase tracking-wider block font-semibold">Broadcast Message Text</label>
-                <textarea 
+                <label className="text-[10px] text-[#9191a8] uppercase tracking-wider block font-semibold">Icon</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['📢','🎉','💸','🎁','⚡','🚀','🛡️','⚠️','🎯','💎','🔥','📅'].map(em => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => setNotifIcon(em)}
+                      className={`w-9 h-9 rounded-lg text-base transition-all ${notifIcon === em ? 'bg-[#7c6cff]/25 border border-[#7c6cff]' : 'bg-[#16161f] border border-white/10 hover:border-white/20'}`}
+                      aria-label={em}
+                    >
+                      {em}
+                    </button>
+                  ))}
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={notifIcon}
+                    onChange={(e) => setNotifIcon(e.target.value || '📢')}
+                    className="w-16 bg-[#16161f] border border-white/10 rounded-lg text-center text-base outline-none focus:border-[#7c6cff]"
+                  />
+                </div>
+              </div>
+
+              {/* Message text */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-[#9191a8] uppercase tracking-wider block font-semibold">Message Text</label>
+                <textarea
                   required
-                  rows={2}
-                  placeholder="e.g. 💸 Over ₹7,000 processed in UPI withdrawals today! Check your balances..."
+                  rows={3}
+                  placeholder="e.g. New Premium Tasks available — earn up to ₹250 per offer. Tap to start!"
                   value={notifMessage}
                   onChange={(e) => setNotifMessage(e.target.value)}
                   className="w-full bg-[#16161f] border border-white/12 rounded-xl py-2.5 px-3 text-xs text-[#f0f0f8] outline-none focus:border-[#7c6cff] resize-none"
                 />
               </div>
 
+              {/* Media URL + Upload */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-[#9191a8] uppercase tracking-wider block font-semibold">Media URL (image / video) — optional</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="https://example.com/banner.jpg  OR  https://youtu.be/xxx"
+                    value={notifMediaUrl}
+                    onChange={(e) => { setNotifMediaUrl(e.target.value); setNotifUploadPreview(''); }}
+                    className="flex-1 bg-[#16161f] border border-white/12 rounded-xl py-2 px-3 text-xs text-[#f0f0f8] outline-none focus:border-[#7c6cff]"
+                  />
+                  <label className="bg-[#16161f] hover:bg-white/[0.04] border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl text-[11px] font-semibold cursor-pointer flex items-center gap-1.5 transition-all">
+                    <span>📎</span><span>Upload JPG</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        if (f.size > 200_000) {
+                          alert('File too large. Use a URL for files > 200KB, or compress the image first.');
+                          e.target.value = '';
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const dataUrl = String(reader.result || '');
+                          setNotifMediaUrl(dataUrl);
+                          setNotifUploadPreview(dataUrl);
+                          setNotifMediaType('image');
+                        };
+                        reader.readAsDataURL(f);
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="text-[10px] text-[#5a5a72] leading-relaxed">
+                  Paste any direct image URL (jpg/png/webp), MP4 video URL, or YouTube/Vimeo link. For uploads, max 200 KB — larger files should be hosted externally (Imgur, Cloudinary, etc.) and pasted as URL.
+                </p>
+              </div>
+
+              {/* Media type override */}
+              {notifMediaUrl && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-[#9191a8] uppercase tracking-wider block font-semibold">Media Type</label>
+                  <div className="flex gap-2">
+                    {(['auto','image','video'] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setNotifMediaType(t)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-all ${notifMediaType === t ? 'bg-[#7c6cff]/25 border border-[#7c6cff] text-[#a594ff]' : 'bg-[#16161f] border border-white/10 text-[#9191a8] hover:text-white'}`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Optional CTA link */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-[#9191a8] uppercase tracking-wider block font-semibold">Call-to-Action Link — optional</label>
+                <input
+                  type="url"
+                  placeholder="https://your-cta-target.com"
+                  value={notifLinkUrl}
+                  onChange={(e) => setNotifLinkUrl(e.target.value)}
+                  className="w-full bg-[#16161f] border border-white/12 rounded-xl py-2 px-3 text-xs text-[#f0f0f8] outline-none focus:border-[#7c6cff]"
+                />
+              </div>
+
+              {/* Live preview */}
+              {(notifMessage || notifMediaUrl) && (
+                <div className="bg-[#0f0f17] border border-[#7c6cff]/20 rounded-xl p-3">
+                  <div className="text-[9px] uppercase tracking-wider text-[#5a5a72] mb-2 font-semibold">Live Preview</div>
+                  <div className="flex gap-2 items-start">
+                    <span className="text-lg shrink-0">{notifIcon}</span>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      {notifMessage && <p className="text-xs text-[#f0f0f8] leading-snug">{notifMessage}</p>}
+                      {notifMediaUrl && (notifMediaType === 'video' || /youtube|youtu\.be|vimeo|\.(mp4|webm|ogg|mov)/i.test(notifMediaUrl)) ? (
+                        <div className="rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center text-[10px] text-[#5a5a72] border border-white/5">
+                          🎬 Video attachment
+                        </div>
+                      ) : notifMediaUrl && (notifUploadPreview || /^data:image\//.test(notifMediaUrl) || /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(notifMediaUrl)) ? (
+                        <img src={notifMediaUrl} alt="preview" className="rounded-lg max-h-40 object-cover border border-white/5" />
+                      ) : notifMediaUrl ? (
+                        <div className="rounded-lg overflow-hidden bg-[#1a1a24] border border-white/5 px-3 py-2 text-[10px] text-[#9191a8] truncate">📎 {notifMediaUrl}</div>
+                      ) : null}
+                      {notifLinkUrl && (
+                        <span className="inline-block text-[10px] text-[#a594ff] underline">{notifLinkUrl}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="pt-2">
                 <button
                   type="submit"
                   className="bg-[#7c6cff] hover:bg-[#6855ef] text-white px-6 py-2.5 rounded-xl font-display font-bold text-xs select-none transition-all cursor-pointer"
                 >
-                  🚀 Broadcast Pushed Notification
+                  🚀 Send Broadcast to All Members
                 </button>
               </div>
             </form>

@@ -1212,9 +1212,16 @@ export default function App() {
     }
   };
 
-  const handleAddNotification = async (messageText: string) => {
+  const handleAddNotification = async (payload: {
+    message: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video';
+    linkUrl?: string;
+    icon?: string;
+  } | string) => {
+    const normalized = typeof payload === 'string' ? { message: payload } : payload;
     try {
-      await secureApi.adminBroadcast(messageText);
+      await secureApi.adminBroadcast(normalized);
       triggerToast('success', 'Broadcast notification sent to all members.');
     } catch (err: any) {
       triggerToast('error', err?.message || 'Broadcast failed.');
@@ -2553,24 +2560,72 @@ export default function App() {
                   <p className="text-[10px] text-[#9191a8]">You are completely caught up!</p>
                 </div>
               ) : (
-                notifications.map((n, i) => (
-                  <div key={n.id || i} className="flex gap-3 py-3 items-center justify-between first:pt-0 group">
-                    <div className="flex gap-3 items-start max-w-[85%]">
+                notifications.map((n, i) => {
+                  const mUrl = (n as any).mediaUrl as string | undefined;
+                  const mType = (n as any).mediaType as string | undefined;
+                  const lUrl = (n as any).linkUrl as string | undefined;
+                  const isYouTube = mUrl && /youtube|youtu\.be/i.test(mUrl);
+                  const ytId = isYouTube
+                    ? (mUrl!.match(/(?:v=|youtu\.be\/)([\w-]{11})/)?.[1] || '')
+                    : '';
+                  const isVideoFile = mUrl && (mType === 'video' || /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(mUrl));
+                  const isImage = mUrl && !isYouTube && !isVideoFile && (mType === 'image' || mUrl.startsWith('data:image/') || /\.(jpe?g|png|webp|gif|avif|bmp|svg)(\?|$)/i.test(mUrl));
+                  return (
+                    <div key={n.id || i} className="flex gap-3 py-3 first:pt-0 group">
                       <span className="text-lg shrink-0 mt-0.5">{n.icon}</span>
-                      <div>
-                        <p className="text-xs text-[#f0f0f8] leading-tight font-medium pr-1">{n.msg}</p>
-                        <span className="text-[9px] text-[#5a5a72] block mt-1">{n.time}</span>
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs text-[#f0f0f8] leading-snug font-medium pr-1">{n.msg}</p>
+                          <button
+                            onClick={() => handleDismissNotification(n.id)}
+                            className="text-[10px] text-[#9191a8] hover:text-[#ff5a5a] bg-white/5 hover:bg-white/10 p-1.5 rounded-full transition-all shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            title="Dismiss alert"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {isImage && (
+                          <img
+                            src={mUrl}
+                            alt="broadcast"
+                            className="rounded-lg max-h-56 w-full object-cover border border-white/5"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        )}
+                        {isYouTube && ytId && (
+                          <div className="rounded-lg overflow-hidden border border-white/5 aspect-video">
+                            <iframe
+                              src={`https://www.youtube.com/embed/${ytId}`}
+                              title="broadcast video"
+                              className="w-full h-full"
+                              allow="accelerometer; clipboard-write; encrypted-media; picture-in-picture"
+                              referrerPolicy="no-referrer-when-downgrade"
+                            />
+                          </div>
+                        )}
+                        {isVideoFile && (
+                          <video
+                            src={mUrl}
+                            controls
+                            className="rounded-lg max-h-56 w-full border border-white/5 bg-black"
+                            preload="metadata"
+                          />
+                        )}
+                        {lUrl && (
+                          <a
+                            href={lUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-[#7c6cff] hover:bg-[#6a5aef] px-3 py-1.5 rounded-lg transition-all"
+                          >
+                            View details →
+                          </a>
+                        )}
+                        <span className="text-[9px] text-[#5a5a72] block">{n.time}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDismissNotification(n.id)}
-                      className="text-[10px] text-[#9191a8] hover:text-[#ff5a5a] bg-white/5 hover:bg-white/10 p-1.5 rounded-full transition-all shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 md:opacity-0"
-                      title="Dismiss alert"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

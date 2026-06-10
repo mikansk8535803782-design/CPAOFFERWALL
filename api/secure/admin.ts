@@ -337,19 +337,55 @@ const ACTIONS = {
   },
 
   async 'broadcast'(db: ReturnType<typeof getAdminDb>, payload: any) {
-    const { message } = payload || {};
+    const { message, mediaUrl, mediaType, linkUrl, icon } = payload || {};
     if (!message) throw new Error('message required');
+
+    // Server-side validation of the optional media URL
+    let safeMediaUrl = '';
+    let safeMediaType: 'image' | 'video' | '' = '';
+    if (mediaUrl) {
+      const u = String(mediaUrl).trim();
+      if (!/^https?:\/\//i.test(u) && !u.startsWith('data:image/')) {
+        throw new Error('mediaUrl must start with http(s):// or be a data:image URL');
+      }
+      if (u.length > 200_000) throw new Error('mediaUrl too large (max 200KB)');
+      safeMediaUrl = u;
+      // Resolve type from explicit value or guess from extension
+      if (mediaType === 'image' || mediaType === 'video') {
+        safeMediaType = mediaType;
+      } else if (/\.(jpe?g|png|webp|gif|avif|bmp|svg)(\?|$)/i.test(u) || u.startsWith('data:image/')) {
+        safeMediaType = 'image';
+      } else if (/\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(u) || /youtube|youtu\.be|vimeo/i.test(u)) {
+        safeMediaType = 'video';
+      } else {
+        safeMediaType = 'image';
+      }
+    }
+    let safeLinkUrl = '';
+    if (linkUrl) {
+      const lu = String(linkUrl).trim();
+      if (!/^https?:\/\//i.test(lu)) throw new Error('linkUrl must start with http(s)://');
+      safeLinkUrl = lu;
+    }
+    const safeIcon = (icon && typeof icon === 'string') ? icon.slice(0, 8) : '📢';
+
     const q = await db.query({ users: {} });
     const runs: AnyTx[] = [];
     (q.users || []).forEach((u: any) => {
       const notifId = newId(`NFT_BC_${u.id}`);
-      runs.push(db.tx.notifications[notifId].update({
+      const row: any = {
         id: notifId,
-        icon: '📢',
+        icon: safeIcon,
         msg: message,
         time: 'Just now',
         userId: u.id,
-      }));
+      };
+      if (safeMediaUrl) {
+        row.mediaUrl = safeMediaUrl;
+        row.mediaType = safeMediaType;
+      }
+      if (safeLinkUrl) row.linkUrl = safeLinkUrl;
+      runs.push(db.tx.notifications[notifId].update(row));
       runs.push(db.tx.notifications[notifId].link({ user: u.id }));
     });
     if (runs.length) await db.transact(runs);
