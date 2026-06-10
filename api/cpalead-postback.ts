@@ -145,16 +145,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send('user suspended — no credit issued');
   }
 
-  // 5. Pull current system settings (payout ratio, USD→INR, pts rate)
+  // 5. Pull current system settings (USD→INR; coins are pegged 1:cent)
   const settingsQuery = await db.query({ system_settings: {} });
   const settings = (settingsQuery.system_settings?.[0] || {}) as any;
-  const ratio = Number.isFinite(settings.cpaPayoutRatio) ? settings.cpaPayoutRatio : 0.7;
   const usdInr = Number.isFinite(settings.cpaUsdToInr) ? settings.cpaUsdToInr : 83;
-  const ptsRate = Number.isFinite(settings.ptsToCashRate) ? settings.ptsToCashRate : 20;
 
-  // 6. Compute reward
-  const payoutInr = +(payoutUsd * usdInr * ratio).toFixed(2);
-  const pointsCredited = Math.max(0, Math.round(payoutInr * ptsRate));
+  // 6. Compute reward — full payout converted to INR; coins = cents USD
+  const payoutInr = +(payoutUsd * usdInr).toFixed(2);
+  const pointsCredited = Math.max(0, Math.round(payoutUsd * 100));
 
   // 7. Single atomic write — conversion + balance + tx + notification
   const now = new Date();

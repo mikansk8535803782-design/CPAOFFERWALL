@@ -294,14 +294,16 @@ const SEEDED_NOTIFICATIONS: NotificationItem[] = INITIAL_NOTIFICATIONS.map(n => 
 
 export default function App() {
   // ─────────────── PERSISTING STATES ───────────────
+  // Session user is restored from localStorage on mount. We deliberately
+  // ignore the temporary "auth modal" placeholder ({id:'any'}) so that
+  // a half-completed login flow doesn't pollute the persisted value.
   const [sessionUser, setSessionUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('eh_session_user');
     if (!saved) return null;
     try {
       const parsed = JSON.parse(saved);
-      if (parsed && parsed.id) {
-        parsed.id = toUUID(parsed.id);
-      }
+      if (!parsed || !parsed.id || parsed.id === 'any') return null;
+      parsed.id = toUUID(parsed.id);
       return parsed;
     } catch {
       return null;
@@ -780,10 +782,29 @@ export default function App() {
     ? (dbUsers.find(u => u.id === sessionUser.id) || sessionUser)
     : null;
 
-  // Sync session ID to LocalStorage
+  // Sync session ID to LocalStorage — but never persist the temporary
+  // auth-modal placeholder, so back/refresh from inside the modal
+  // doesn't strand the user on the dashboard.
   useEffect(() => {
-    localStorage.setItem('eh_session_user', JSON.stringify(sessionUser));
+    if (sessionUser && sessionUser.id !== 'any') {
+      localStorage.setItem('eh_session_user', JSON.stringify(sessionUser));
+    } else if (sessionUser === null) {
+      localStorage.removeItem('eh_session_user');
+    }
   }, [sessionUser]);
+
+  // Auto-restore session from the InstantDB auth context. If the user is
+  // still signed-in at InstantDB (token in localStorage) but our session
+  // user got cleared (e.g. after a fresh tab from browser back), find
+  // their row by email and put them straight back into the dashboard.
+  useEffect(() => {
+    if (!instantAuthUser?.email) return;
+    if (sessionUser && sessionUser.id !== 'any') return;
+    const matched = dbUsers.find(
+      u => u.email && u.email.toLowerCase() === String(instantAuthUser.email).toLowerCase()
+    );
+    if (matched) setSessionUser(matched);
+  }, [instantAuthUser, dbUsers, sessionUser]);
 
   // Navigation Options Array
   const navItems = liveUser?.role === 'admin'
@@ -801,7 +822,7 @@ export default function App() {
     : [
         { id: 'dashboard', label: 'Dashboard', icon: BarChart3, sec: 'Main' },
         ...(!systemSettings.disableTasks ? [{ id: 'tasks', label: 'Tasks', icon: CheckSquare, sec: 'Main', badge: String(tasks.length - completedTasks.length) }] : []),
-        ...(!systemSettings.disableOfferwall ? [{ id: 'offerwall', label: 'CPA Offerwall', icon: Globe, sec: 'Main' }] : []),
+        ...(!systemSettings.disableOfferwall ? [{ id: 'offerwall', label: 'Premium Tasks', icon: Globe, sec: 'Main' }] : []),
         { id: 'wallet', label: 'My Wallet', icon: Wallet, sec: 'Earnings' },
         ...(!systemSettings.disableReferrals ? [{ id: 'referral', label: 'Referrals', icon: Users, sec: 'Earnings' }] : []),
         { id: 'profile', label: 'My Profile', icon: UserIcon, sec: 'Account' },
@@ -809,7 +830,7 @@ export default function App() {
       ];
 
   const liveConfig: any = dbData?.systemConfig?.find((c: any) => c.id === 'global_config') || {};
-  const liveAnnouncement = liveConfig.System_Announcement || "Admin Announcement Broadcast Banner Text View: Double points on all Offerwall tasks this weekend!";
+  const liveAnnouncement = liveConfig.System_Announcement || "Welcome! Double points on all Premium Tasks this weekend.";
   const liveMaintenance = liveConfig.System_Maintenance_Mode;
 
   // Role-based safe view guard routing redirection
@@ -2278,7 +2299,7 @@ export default function App() {
                 </Suspense>
               )}
 
-              {/* CPA OFFERWALL TAB VIEW */}
+              {/* PREMIUM TASKS TAB VIEW */}
               {activeView === 'offerwall' && (
                 <Suspense fallback={<TabLoadingPlaceholder />}>
                   <Offerwall userId={sessionUser.id} />

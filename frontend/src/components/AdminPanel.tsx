@@ -1255,10 +1255,10 @@ export default function AdminPanel({
                 <span className="text-[10px] text-[#9191a8] uppercase font-bold tracking-wider block font-mono">Module Active / Block State Toggles</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   
-                  {/* CPA Offerwall toggle */}
+                  {/* Premium Tasks toggle */}
                   <label className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 cursor-pointer hover:bg-white/[0.04]">
                     <div className="space-y-0.5">
-                      <span className="text-xs font-semibold text-white block">Disable CPA Offerwall</span>
+                      <span className="text-xs font-semibold text-white block">Disable Premium Tasks</span>
                       <span className="text-[10px] text-[#5a5a72]">Omit CPA survey and adwalls page access</span>
                     </div>
                     <input 

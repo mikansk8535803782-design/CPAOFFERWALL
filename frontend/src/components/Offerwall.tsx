@@ -93,10 +93,10 @@ export default function Offerwall({ userId }: OfferwallProps) {
         <div className="space-y-1 relative z-10">
           <h3 className="font-display font-semibold text-base text-white flex items-center gap-2">
             <Globe className="w-4 h-4 text-[#a594ff]" />
-            CPA Offers · India
+            Premium Tasks · India
           </h3>
           <p className="text-xs text-[#9191a8]">
-            Complete partner offers below and your reward will be credited automatically once verified.
+            Complete the tasks below and your reward will be credited automatically once verified.
           </p>
         </div>
         {!useWidget && (
@@ -148,7 +148,7 @@ export default function Offerwall({ userId }: OfferwallProps) {
         <div className="bg-[#1a1a24] border border-white/7 rounded-2xl overflow-hidden" data-testid="offerwall-widget">
           <iframe
             src={iframeSrc}
-            title="CPA Offerwall"
+            title="Premium Tasks"
             className="w-full"
             style={{ height: '720px', border: 0, background: '#0a0a0f' }}
             allow="clipboard-read; clipboard-write; fullscreen"

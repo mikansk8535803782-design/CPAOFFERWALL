@@ -9,8 +9,11 @@ import { newId, toDocId, today } from '../_lib/ids';
 
 const SIGNUP_BONUS_PTS = 50;
 const SIGNUP_BONUS_INR = 2.5;
-const REF_BONUS_PTS = 200;
-const REF_BONUS_INR = 10;
+// Referral bonus is paid out by the task-approval flow (server-side) once
+// the referred user completes their 2nd verified task. The values below
+// are the *target* — see api/secure/admin.ts -> approve-proof.
+const REF_BONUS_PTS = 300;
+const REF_BONUS_INR = 15;
 
 function readBearer(req: VercelRequest): string | null {
   const raw = req.headers.authorization || req.headers.Authorization;
@@ -95,6 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     tasksCompleted: 0,
     refs: 0,
     suspended: false,
+    refRewardPaid: false,
     regDate: today(),
     refCode,
     refBy,
@@ -103,30 +107,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const txs: any[] = [db.tx.users[userId].update(newUser)];
 
   if (sponsor) {
+    // Increment refs counter ONLY. The ₹15 bonus is paid out by
+    // api/secure/admin.ts approve-proof when the new user completes
+    // their 2nd verified task — this prevents fake/throwaway signups.
     txs.push(db.tx.users[sponsor.id].update({
       refs: (sponsor.refs || 0) + 1,
-      points: (sponsor.points || 0) + REF_BONUS_PTS,
-      balance: +(((sponsor.balance || 0) + REF_BONUS_INR).toFixed(2)),
-      totalEarned: +(((sponsor.totalEarned || 0) + REF_BONUS_INR).toFixed(2)),
     }));
-    const bonusTxId = newId('TXN_REF_BONUS');
-    txs.push(db.tx.transactions[bonusTxId].update({
-      id: bonusTxId,
-      desc: `Referral signup bonus: @${fname}`,
-      type: 'referral',
-      amount: REF_BONUS_INR,
-      pts: REF_BONUS_PTS,
-      status: 'approved',
-      date: today(),
-      dir: 1,
-      userId: sponsor.id,
-    }));
-    txs.push(db.tx.transactions[bonusTxId].link({ user: sponsor.id }));
-    const notifId = newId('NFT_REF_BONUS');
+    const notifId = newId('NFT_REF_PENDING');
     txs.push(db.tx.notifications[notifId].update({
       id: notifId,
       icon: '🤝',
-      msg: `Your referral @${fname} just joined. +₹${REF_BONUS_INR.toFixed(2)} credited.`,
+      msg: `@${fname} signed up using your referral. Earn ₹${REF_BONUS_INR} when they complete 2 tasks.`,
       time: 'Just now',
       userId: sponsor.id,
     }));

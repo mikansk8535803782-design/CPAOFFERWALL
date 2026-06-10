@@ -79,7 +79,52 @@ const ACTIONS = {
       txs.push(db.tx.transactions[txId].link({ user: user.id }));
     }
 
-    // 3-tier commission cascade (10 / 5 / 2 %)
+    // ── Qualified-referral one-time bonus ─────────────────────────────
+    // When the referred user crosses 2 verified tasks, credit their direct
+    // sponsor with a flat ₹15 + 300 pts. Pays exactly once per user.
+    const newTaskCount = (user.tasksCompleted || 0) + 1;
+    if (
+      user.refBy &&
+      !user.refRewardPaid &&
+      newTaskCount >= 2
+    ) {
+      const sQ3 = await db.query({ users: { $: { where: { refCode: user.refBy } } } });
+      const directSponsor = sQ3.users?.[0] as any;
+      if (directSponsor && !directSponsor.suspended) {
+        const refInr = 15;
+        const refPts = 300;
+        const refTxId = newId('TXN_REF_BONUS');
+        const refNotifId = newId('NFT_REF_BONUS');
+        txs.push(db.tx.users[directSponsor.id].update({
+          balance: +(((directSponsor.balance || 0) + refInr).toFixed(2)),
+          points: (directSponsor.points || 0) + refPts,
+          totalEarned: +(((directSponsor.totalEarned || 0) + refInr).toFixed(2)),
+        }));
+        txs.push(db.tx.users[user.id].update({ refRewardPaid: true }));
+        txs.push(db.tx.transactions[refTxId].update({
+          id: refTxId,
+          desc: `Qualified referral bonus: @${user.fname} (2 tasks completed)`,
+          type: 'referral',
+          amount: refInr,
+          pts: refPts,
+          status: 'approved',
+          date: today(),
+          dir: 1,
+          userId: directSponsor.id,
+        }));
+        txs.push(db.tx.transactions[refTxId].link({ user: directSponsor.id }));
+        txs.push(db.tx.notifications[refNotifId].update({
+          id: refNotifId,
+          icon: '🎯',
+          msg: `Referral qualified! @${user.fname} completed 2 tasks. +₹${refInr.toFixed(2)} credited.`,
+          time: 'Just now',
+          userId: directSponsor.id,
+        }));
+        txs.push(db.tx.notifications[refNotifId].link({ user: directSponsor.id }));
+      }
+    }
+
+    // 3-tier commission cascade (10 / 5 / 2 %) — runs every task
     if (user.refBy) {
       const levels = [0.10, 0.05, 0.02];
       let sponsorCode = user.refBy;

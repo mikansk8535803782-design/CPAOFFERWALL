@@ -22,8 +22,9 @@ interface NormalizedOffer {
 }
 
 const USD_TO_INR_FALLBACK = 83;
-const PAYOUT_RATIO_FALLBACK = 0.7;
-const POINTS_PER_RUPEE = 20; // matches systemSettings.ptsToCashRate
+// Reward coins are pegged to CPALead's payout: 1 cent USD = 1 coin.
+// So a $0.50 offer credits 50 coins (₹41.5 cash at 83/USD).
+const COINS_PER_USD = 100;
 
 function pickIcon(category: string): string {
   const c = (category || '').toLowerCase();
@@ -43,10 +44,10 @@ function normalize(raw: any): NormalizedOffer | null {
   const usd = parseFloat(String(raw.amount ?? '0')) || 0;
   if (usd <= 0) return null;
 
-  const ratio = PAYOUT_RATIO_FALLBACK;
+  const ratio = 1.0;
   const usdInr = USD_TO_INR_FALLBACK;
   const payoutInr = +(usd * usdInr * ratio).toFixed(2);
-  const rewardPoints = Math.round(payoutInr * POINTS_PER_RUPEE);
+  const rewardPoints = Math.round(usd * COINS_PER_USD);
 
   // Click URL: `link`, with a fallback to creatives[0].link.
   let click: string = raw.link ?? raw.creatives?.[0]?.link ?? '';

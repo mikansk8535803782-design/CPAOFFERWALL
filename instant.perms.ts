@@ -75,6 +75,7 @@ const rules = {
         " && data.role == newData.role" +
         " && data.refBy == newData.refBy" +
         " && data.refCode == newData.refCode" +
+        " && data.refRewardPaid == newData.refRewardPaid" +
         " && data.email == newData.email" +
         " && data.id == newData.id",
 
