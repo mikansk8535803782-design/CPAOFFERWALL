@@ -1,0 +1,13 @@
+# Exclude folders not needed by Vercel deployment
+backend/
+memory/
+tests/
+test_reports/
+test_result.md
+**/node_modules/
+**/.cache/
+**/dist/
+**/.env
+**/.env.local
+.git/
+.emergent/

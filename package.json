@@ -1,0 +1,20 @@
+{
+  "name": "earnhub-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "EarnHub — Vercel deployment wrapper. Real app lives in /frontend.",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "build": "cd frontend && yarn install --frozen-lockfile && yarn build",
+    "vercel-build": "cd frontend && yarn install --frozen-lockfile && yarn build",
+    "dev": "cd frontend && yarn dev",
+    "start": "cd frontend && yarn start"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@instantdb/admin": "^1.0.43",
+    "@vercel/node": "^3.2.24"
+  }
+}

@@ -1,70 +1,79 @@
-# Getting Started with Create React App
+# EarnHub
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+India's premier micro-tasks + CPA + 3-tier referral platform. React + Vite + InstantDB.
 
-## Available Scripts
+## Tech Stack
 
-In the project directory, you can run:
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS v4
+- **Database & Auth**: [InstantDB](https://www.instantdb.com) (real-time, email-OTP)
+- **Serverless API**: Vercel functions (`/api/chat` for support bot)
+- **AI**: Google Gemini (optional — used by support bot)
+- **Icons / motion**: lucide-react, framer-motion, canvas-confetti
 
-### `npm start`
+## Quick start (local)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+```bash
+cp .env.example .env
+# Fill VITE_INSTANT_APP_ID at minimum
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+yarn install
+yarn dev
+# → http://localhost:3000
+```
 
-### `npm test`
+`yarn dev` boots a small Express server (`server.ts`) that mounts Vite in middleware
+mode and proxies `/api/chat` to the local Gemini client. Use this for local
+development only.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Deploy to Vercel
 
-### `npm run build`
+1. **Create an InstantDB app**
+   - Go to <https://www.instantdb.com/dash>
+   - Copy the **App ID** — you'll need it as `VITE_INSTANT_APP_ID`
+   - Email-OTP magic-codes are enabled by default on every InstantDB app
+2. **(Optional) Get a Gemini API key**
+   - From <https://aistudio.google.com/app/apikey>
+   - Add as `GEMINI_API_KEY` for richer support-bot replies
+3. **Push this folder to GitHub** (any repo)
+4. **Import the repo on Vercel** (<https://vercel.com/new>)
+   - Framework preset: **Vite** (auto-detected)
+   - Build command: `vite build` (auto)
+   - Output directory: `dist` (auto)
+   - **Environment variables**:
+     - `VITE_INSTANT_APP_ID` → your InstantDB app id
+     - `GEMINI_API_KEY` → your Gemini key (optional)
+5. **Deploy**. Vercel will:
+   - Build the SPA into `dist/`
+   - Auto-detect `api/chat.ts` as a serverless function
+   - Apply `vercel.json` rewrites for SPA routing
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+That's it — no server to manage, no DB to provision.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Auth — Email OTP via InstantDB
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- **Sign in / Register** flow uses InstantDB's built-in magic-code:
+  - Step 1: user enters email
+  - Step 2: a 6-digit code is mailed by InstantDB (free, hosted)
+  - Step 3: user enters the code; on success an account record is
+    looked up (sign-in) or created (register) in the `users` collection.
+- **Demo Login** button bypasses email (logs in as the seeded user `Rahul Kumar`)
+  for quick previewing without a real inbox.
 
-### `npm run eject`
+## Project layout
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```
+/api
+  chat.ts            # Vercel serverless function — Gemini chat proxy
+/src
+  App.tsx            # Main shell, routing, auth
+  components/        # Tasks, Offerwall, Wallet, Referrals, Admin, etc.
+  types.ts           # Shared TS types
+  index.css          # Tailwind + theme tokens
+server.ts            # Local dev server (Vite middleware + chat API)
+vercel.json          # Vercel framework / rewrites
+vite.config.ts       # Vite config
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## License
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Apache-2.0

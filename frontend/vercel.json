@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "installCommand": "yarn install",
+  "functions": {
+    "api/chat.ts": {
+      "runtime": "@vercel/node@3.2.24",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/" }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ]
+}
