@@ -28,7 +28,25 @@ interface OfferwallProps {
 
 // Optional CPALead iframe widget URL configured via env. Should contain `{subid}`
 // placeholder which will be replaced with the user's UUID at runtime.
-const WIDGET_URL: string = (import.meta as any).env?.VITE_CPALEAD_WIDGET_URL || '';
+// SAFETY: If the configured URL points to our own origin, we refuse the iframe
+// mode and fall back to the API listing — otherwise an mis-configured env
+// would load our own site inside the iframe, which looks like "the dashboard
+// re-appearing inside the Premium Tasks tab".
+const RAW_WIDGET_URL: string = (import.meta as any).env?.VITE_CPALEAD_WIDGET_URL || '';
+const WIDGET_URL: string = (() => {
+  if (!RAW_WIDGET_URL) return '';
+  try {
+    const wu = new URL(RAW_WIDGET_URL);
+    if (typeof window !== 'undefined' && wu.origin === window.location.origin) {
+      // eslint-disable-next-line no-console
+      console.warn('[Offerwall] VITE_CPALEAD_WIDGET_URL points to the app\'s own origin — ignoring to prevent recursive iframe.');
+      return '';
+    }
+    return RAW_WIDGET_URL;
+  } catch {
+    return '';
+  }
+})();
 
 export default function Offerwall({ userId }: OfferwallProps) {
   const [offers, setOffers] = useState<CpaOffer[]>([]);

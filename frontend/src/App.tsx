@@ -833,15 +833,26 @@ export default function App() {
   const liveAnnouncement = liveConfig.System_Announcement || "Welcome! Double points on all Premium Tasks this weekend.";
   const liveMaintenance = liveConfig.System_Maintenance_Mode;
 
-  // Role-based safe view guard routing redirection
+  // Role-based safe view guard — only kicks in when the user truly tries to
+  // access an admin-only screen they no longer have permission for. We
+  // deliberately do NOT redirect when a sidebar toggle (disableOfferwall etc.)
+  // hides a tab — instead the tab renders a friendly "section disabled"
+  // message, which avoids the race where a slow settings query yanks the
+  // user back to the dashboard mid-click.
   useEffect(() => {
-    if (liveUser) {
-      const isValidView = navItems.some(item => item.id === activeView);
-      if (!isValidView && navItems.length > 0) {
-        setActiveView(navItems[0].id);
-      }
+    if (!liveUser) return;
+    if (activeView.startsWith('admin-') && liveUser.role !== 'admin') {
+      setActiveView('dashboard');
     }
-  }, [liveUser, activeView, navItems]);
+  }, [liveUser, activeView]);
+
+  // Scroll the main panel back to the top whenever the active view changes,
+  // so a tab switch never visually overlaps with the previous content.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [activeView]);
 
   const triggerToast = (type: 'success' | 'error' | 'info', text: string) => {
     setToastMsg({ type, text });
@@ -2025,7 +2036,7 @@ export default function App() {
               
               {/* DASHBOARD VIEW Panel */}
               {activeView === 'dashboard' && (
-                <div id="panel-dashboard" className="fadeIn space-y-6">
+                <div id="panel-dashboard" data-testid="panel-dashboard" className="fadeIn space-y-6">
                   {/* Greeting promo */}
                   <div className="bg-gradient-to-r from-[#7c6cff]/15 to-[#5aedcc]/5 border border-[#7c6cff]/20 rounded-3xl p-6 flex flex-col sm:flex-row justify-between items-center gap-6">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -2308,9 +2319,18 @@ export default function App() {
 
               {/* PREMIUM TASKS TAB VIEW */}
               {activeView === 'offerwall' && (
-                <Suspense fallback={<TabLoadingPlaceholder />}>
-                  <Offerwall userId={sessionUser.id} />
-                </Suspense>
+                <div data-testid="panel-offerwall">
+                  {systemSettings.disableOfferwall ? (
+                    <div className="bg-[#1a1a24] border border-white/5 rounded-2xl p-10 text-center space-y-2 fadeIn">
+                      <p className="text-sm text-white font-semibold">Premium Tasks are temporarily disabled</p>
+                      <p className="text-xs text-[#9191a8]">Please check back soon — we'll let you know once new offers are live.</p>
+                    </div>
+                  ) : (
+                    <Suspense fallback={<TabLoadingPlaceholder />}>
+                      <Offerwall userId={sessionUser.id} />
+                    </Suspense>
+                  )}
+                </div>
               )}
 
               {/* MY WALLET TAB VIEW */}
